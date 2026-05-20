@@ -1,6 +1,8 @@
 package com.lectormae.ui.library
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -10,11 +12,13 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.lectormae.databinding.FragmentLibraryBinding
+import java.io.File
 
 class LibraryFragment : Fragment() {
 
@@ -24,8 +28,33 @@ class LibraryFragment : Fragment() {
     private val vm: LibraryViewModel by viewModels()
 
     private val adapter = BookAdapter(
-        onClick      = { book -> Toast.makeText(requireContext(), "Abriendo: ${book.title}", Toast.LENGTH_SHORT).show() },
-        onLongClick  = { book ->
+        onClick = { book ->
+            val file = File(book.filePath)
+            if (!file.exists()) {
+                Toast.makeText(requireContext(), "Archivo no encontrado", Toast.LENGTH_SHORT).show()
+                return@BookAdapter
+            }
+            val mime = if (book.format == "EPUB") "application/epub+zip" else "application/pdf"
+            val uri = FileProvider.getUriForFile(
+                requireContext(),
+                "${requireContext().packageName}.provider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                startActivity(intent)
+            } catch (e: ActivityNotFoundException) {
+                Toast.makeText(
+                    requireContext(),
+                    "No hay app instalada para abrir ${book.format}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        },
+        onLongClick = { book ->
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(book.title)
                 .setMessage("¿Eliminar de la biblioteca?")
@@ -65,18 +94,13 @@ class LibraryFragment : Fragment() {
         }
 
         b.fab.setOnClickListener {
-            pickFile.launch(arrayOf("application/epub+zip", "application/pdf", "*/*"))
+            pickFile.launch(arrayOf("application/epub+zip", "application/pdf"))
         }
 
         checkAndScan()
     }
 
     private fun checkAndScan() {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-            Manifest.permission.READ_MEDIA_IMAGES   // API 33+ (fallback — no existe READ_MEDIA_DOCUMENTS en 33)
-        else
-            Manifest.permission.READ_EXTERNAL_STORAGE
-
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_EXTERNAL_STORAGE)
             == PackageManager.PERMISSION_GRANTED) {
             vm.scanStorage()
