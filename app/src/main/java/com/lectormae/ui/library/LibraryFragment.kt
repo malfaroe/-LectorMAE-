@@ -4,7 +4,7 @@ import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -28,32 +28,7 @@ class LibraryFragment : Fragment() {
     private val vm: LibraryViewModel by viewModels()
 
     private val adapter = BookAdapter(
-        onClick = { book ->
-            val file = File(book.filePath)
-            if (!file.exists()) {
-                Toast.makeText(requireContext(), "Archivo no encontrado", Toast.LENGTH_SHORT).show()
-                return@BookAdapter
-            }
-            val mime = if (book.format == "EPUB") "application/epub+zip" else "application/pdf"
-            val uri = FileProvider.getUriForFile(
-                requireContext(),
-                "${requireContext().packageName}.provider",
-                file
-            )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mime)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            try {
-                startActivity(intent)
-            } catch (e: ActivityNotFoundException) {
-                Toast.makeText(
-                    requireContext(),
-                    "No hay app instalada para abrir ${book.format}",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        },
+        onClick = { book -> openBook(book.filePath, book.format) },
         onLongClick = { book ->
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(book.title)
@@ -68,7 +43,9 @@ class LibraryFragment : Fragment() {
         uri?.let { vm.importFromUri(it) }
     }
 
-    private val requestPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    private val requestPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
         if (granted) vm.scanStorage()
         else Toast.makeText(requireContext(), "Se necesita permiso para escanear libros.", Toast.LENGTH_LONG).show()
     }
@@ -98,6 +75,37 @@ class LibraryFragment : Fragment() {
         }
 
         checkAndScan()
+    }
+
+    private fun openBook(filePath: String, format: String) {
+        val mime = if (format == "EPUB") "application/epub+zip" else "application/pdf"
+
+        val uri: Uri = if (filePath.startsWith("content://")) {
+            // MediaStore URI — use directly, no FileProvider needed
+            Uri.parse(filePath)
+        } else {
+            // Internal storage file copied from picker — use FileProvider
+            val file = File(filePath)
+            if (!file.exists()) {
+                Toast.makeText(requireContext(), "Archivo no encontrado", Toast.LENGTH_SHORT).show()
+                return
+            }
+            FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.provider", file)
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(
+                requireContext(),
+                "No hay app para abrir $format. Instala Moon+ Reader o ReadEra.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private fun checkAndScan() {
