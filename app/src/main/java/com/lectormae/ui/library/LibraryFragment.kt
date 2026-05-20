@@ -18,6 +18,7 @@ import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.lectormae.databinding.FragmentLibraryBinding
+import com.lectormae.ui.reader.ReaderActivity
 import java.io.File
 
 class LibraryFragment : Fragment() {
@@ -28,7 +29,19 @@ class LibraryFragment : Fragment() {
     private val vm: LibraryViewModel by viewModels()
 
     private val adapter = BookAdapter(
-        onClick = { book -> openBook(book.filePath, book.format) },
+        onClick = { book ->
+            when (book.format) {
+                "EPUB" -> {
+                    val intent = Intent(requireContext(), ReaderActivity::class.java).apply {
+                        putExtra(ReaderActivity.EXTRA_FILE_PATH, book.filePath)
+                        putExtra(ReaderActivity.EXTRA_TITLE, book.title)
+                    }
+                    startActivity(intent)
+                }
+                "PDF" -> openPdfExternal(book.filePath)
+                else  -> Toast.makeText(requireContext(), "Formato no soportado", Toast.LENGTH_SHORT).show()
+            }
+        },
         onLongClick = { book ->
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(book.title)
@@ -77,34 +90,20 @@ class LibraryFragment : Fragment() {
         checkAndScan()
     }
 
-    private fun openBook(filePath: String, format: String) {
-        val mime = if (format == "EPUB") "application/epub+zip" else "application/pdf"
-
+    private fun openPdfExternal(filePath: String) {
         val uri: Uri = if (filePath.startsWith("content://")) {
-            // MediaStore URI — use directly, no FileProvider needed
             Uri.parse(filePath)
         } else {
-            // Internal storage file copied from picker — use FileProvider
-            val file = File(filePath)
-            if (!file.exists()) {
-                Toast.makeText(requireContext(), "Archivo no encontrado", Toast.LENGTH_SHORT).show()
-                return
-            }
-            FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.provider", file)
+            FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.provider", File(filePath))
         }
-
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
+            setDataAndType(uri, "application/pdf")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         try {
             startActivity(intent)
         } catch (e: ActivityNotFoundException) {
-            Toast.makeText(
-                requireContext(),
-                "No hay app para abrir $format. Instala Moon+ Reader o ReadEra.",
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(requireContext(), "No hay visor de PDF instalado", Toast.LENGTH_LONG).show()
         }
     }
 
