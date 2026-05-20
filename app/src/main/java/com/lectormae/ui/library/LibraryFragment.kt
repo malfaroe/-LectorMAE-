@@ -35,6 +35,7 @@ class LibraryFragment : Fragment() {
                     val intent = Intent(requireContext(), ReaderActivity::class.java).apply {
                         putExtra(ReaderActivity.EXTRA_FILE_PATH, book.filePath)
                         putExtra(ReaderActivity.EXTRA_TITLE, book.title)
+                        putExtra(ReaderActivity.EXTRA_BOOK_ID, book.id)
                     }
                     startActivity(intent)
                 }
