@@ -1,9 +1,10 @@
 package com.lectormae.ui.reader
 
 import android.content.Context
-import com.lectormae.R
 import android.os.Bundle
 import android.view.GestureDetector
+import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.webkit.JavascriptInterface
@@ -14,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.lectormae.R
 import com.lectormae.databinding.ActivityReaderBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,11 +42,6 @@ class ReaderActivity : AppCompatActivity() {
 
         setSupportActionBar(b.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        b.toolbar.setNavigationOnClickListener { finish() }
-        b.toolbar.inflateMenu(R.menu.menu_reader)
-        b.toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_toc) { showToc(); true } else false
-        }
 
         val filePath  = intent.getStringExtra(EXTRA_FILE_PATH) ?: run { finish(); return }
         bookId        = intent.getStringExtra(EXTRA_BOOK_ID) ?: filePath.hashCode().toString()
@@ -66,7 +63,7 @@ class ReaderActivity : AppCompatActivity() {
             }
             b.progressBar.visibility = View.GONE
             if (parsed == null || parsed.chapters.isEmpty()) {
-                Toast.makeText(this@ReaderActivity, "No se pudo leer el libro", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@ReaderActivity, "No se pudo abrir el libro", Toast.LENGTH_LONG).show()
                 finish()
                 return@launch
             }
@@ -75,6 +72,19 @@ class ReaderActivity : AppCompatActivity() {
             val (ch, pg) = loadPosition()
             loadChapter(ch, initialPage = pg)
         }
+    }
+
+    // ── Toolbar menu ─────────────────────────────────────────────────────────
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.menu_reader, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
+        R.id.action_toc    -> { showToc(); true }
+        android.R.id.home  -> { finish(); true }
+        else               -> super.onOptionsItemSelected(item)
     }
 
     // ── Position persistence ─────────────────────────────────────────────────
@@ -118,7 +128,7 @@ class ReaderActivity : AppCompatActivity() {
                 return true
             }
         })
-        // Consume all touch events to prevent native WebView scrolling
+        // Consume all touch events to block native WebView scroll
         b.webView.setOnTouchListener { _, event -> gesture.onTouchEvent(event); true }
     }
 
@@ -127,10 +137,7 @@ class ReaderActivity : AppCompatActivity() {
 
     // ── Chapter loading ──────────────────────────────────────────────────────
 
-    /**
-     * @param initialPage  0 = first page, -1 = last page, N = exact page
-     * @param anchor       optional fragment id to scroll to
-     */
+    /** initialPage: 0=first, -1=last, N=exact; anchor: optional fragment id */
     private fun loadChapter(index: Int, initialPage: Int = 0, anchor: String? = null) {
         if (index !in chapters.indices) return
         currentChapter = index
@@ -156,86 +163,90 @@ class ReaderActivity : AppCompatActivity() {
             Toast.makeText(this, "Sin índice disponible", Toast.LENGTH_SHORT).show()
             return
         }
-        val labels = toc.map { "  ".repeat(it.depth) + it.title }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Índice")
-            .setItems(labels) { _, i ->
+            .setItems(toc.map { "  ".repeat(it.depth) + it.title }.toTypedArray()) { _, i ->
                 val item = toc[i]
-                if (item.chapterIndex == currentChapter && item.anchor != null) {
+                if (item.chapterIndex == currentChapter && item.anchor != null)
                     b.webView.evaluateJavascript("lmGoToAnchor('${item.anchor}')", null)
-                } else {
+                else
                     loadChapter(item.chapterIndex, anchor = item.anchor)
-                }
             }
             .show()
     }
 
-    // ── HTML injection ───────────────────────────────────────────────────────
+    // ── HTML / CSS / JS injection ────────────────────────────────────────────
 
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
+
         val style = """
             <style id="_lm">
-              html, body { margin:0 !important; padding:0 !important; background:#121212 !important; }
-              body {
-                color:#E0E0E0 !important;
-                font-size:${size}px !important;
-                font-family:Georgia, serif !important;
-                line-height:1.75 !important;
-                padding:12px 16px !important;
-                box-sizing:border-box !important;
-                overflow-x:hidden !important;
+              html, body {
+                margin:0 !important; padding:0 !important;
+                width:100% !important; height:100% !important;
+                overflow:hidden !important; background:#121212 !important;
               }
-              a          { color:#C8965A !important; }
-              img        { max-width:100% !important; height:auto !important; }
-              h1,h2,h3   { color:#FFFFFF !important; }
+              body { color:#E0E0E0 !important; font-size:${size}px !important;
+                     font-family:Georgia,serif !important; line-height:1.75 !important; }
+              /* Pagination wrapper — columns extend horizontally.
+                 column-width + column-gap = 100vw so each page aligns to screen width. */
+              #_lm_p {
+                height:100vh; box-sizing:border-box; padding:12px 16px;
+                -webkit-column-width:calc(100vw - 32px); column-width:calc(100vw - 32px);
+                -webkit-column-gap:32px; column-gap:32px; column-fill:auto;
+              }
+              a        { color:#C8965A !important; }
+              img      { max-width:calc(100vw - 32px) !important; height:auto !important; }
+              h1,h2,h3 { color:#FFFFFF !important; }
             </style>""".trimIndent()
 
-        // Vertical scroll pagination — reliable on all Android WebViews.
-        // CSS columns were avoided because overflow:hidden makes scrollWidth = clientWidth,
-        // causing total pages to always be calculated as 1.
+        // Page count uses an end-marker's getBoundingClientRect().left — avoids
+        // the scrollWidth=clientWidth bug that appears when parent has overflow:hidden.
         val script = """
             <script id="_lm_js">
-              var _p=0, _t=1, _h=0;
-              function lmInit() {
-                _h = window.innerHeight;
-                var totalH = document.documentElement.scrollHeight;
-                _t = Math.max(1, Math.ceil(totalH / _h));
-                var anchor = $anchorJs;
-                if (anchor) {
-                  var el = document.getElementById(anchor);
-                  if (el) { _p = Math.floor((el.getBoundingClientRect().top + window.scrollY) / _h); }
-                  else    { _p = $initialPage < 0 ? _t-1 : $initialPage; }
-                } else {
-                  _p = $initialPage < 0 ? _t-1 : $initialPage;
-                }
-                _p = Math.max(0, Math.min(_p, _t-1));
-                window.scrollTo(0, _p * _h);
-                Android.onPageInfo(_p, _t);
+              var _p=0,_t=1;
+              function _pg(){ return document.getElementById('_lm_p'); }
+              function lmWrap(){
+                var p=document.createElement('div'); p.id='_lm_p';
+                while(document.body.firstChild) p.appendChild(document.body.firstChild);
+                var m=document.createElement('span'); m.id='_lm_end'; p.appendChild(m);
+                document.body.appendChild(p);
               }
-              function lmNext() {
-                if (_p < _t-1) { _p++; window.scrollTo(0, _p*_h); Android.onPageInfo(_p,_t); }
-                else           { Android.onNextChapter(); }
+              function lmMeasure(){
+                _pg().style.transform='none';
+                var r=document.getElementById('_lm_end').getBoundingClientRect();
+                _t=Math.max(1, Math.floor(r.left/window.innerWidth)+1);
               }
-              function lmPrev() {
-                if (_p > 0)    { _p--; window.scrollTo(0, _p*_h); Android.onPageInfo(_p,_t); }
-                else           { Android.onPrevChapter(); }
-              }
-              function lmGoToAnchor(id) {
-                var el = document.getElementById(id);
-                if (!el) return;
-                _p = Math.floor((el.getBoundingClientRect().top + window.scrollY) / _h);
-                window.scrollTo(0, _p*_h);
+              function lmGoPage(n){
+                _p=Math.max(0,Math.min(n,_t-1));
+                _pg().style.transform='translateX(-'+(_p*window.innerWidth)+'px)';
                 Android.onPageInfo(_p,_t);
               }
-              window.addEventListener('load', function() { setTimeout(lmInit, 250); });
+              function lmInit(){
+                lmWrap(); lmMeasure();
+                var anchor=$anchorJs, ip=$initialPage;
+                var start=ip<0?_t-1:ip;
+                if(anchor){
+                  var el=document.getElementById(anchor);
+                  if(el){ _pg().style.transform='none'; start=Math.floor(el.getBoundingClientRect().left/window.innerWidth); }
+                }
+                lmGoPage(start);
+              }
+              function lmNext(){ if(_p<_t-1) lmGoPage(_p+1); else Android.onNextChapter(); }
+              function lmPrev(){ if(_p>0) lmGoPage(_p-1); else Android.onPrevChapter(); }
+              function lmGoToAnchor(id){
+                var el=document.getElementById(id); if(!el) return;
+                _pg().style.transform='none';
+                lmGoPage(Math.floor(el.getBoundingClientRect().left/window.innerWidth));
+              }
+              window.addEventListener('load', function(){ setTimeout(lmInit, 250); });
             </script>""".trimIndent()
 
         val inject = style + script
         return if (original.contains("</head>", ignoreCase = true))
             original.replace("</head>", "$inject</head>", ignoreCase = true)
-        else
-            "$inject$original"
+        else "$inject$original"
     }
 
     // ── JS bridge ────────────────────────────────────────────────────────────
@@ -249,16 +260,14 @@ class ReaderActivity : AppCompatActivity() {
             b.btnPrev.isEnabled = page > 0 || currentChapter > 0
             b.btnNext.isEnabled = page < total-1 || currentChapter < chapters.size-1
         }
-
         @JavascriptInterface
         fun onNextChapter() = runOnUiThread {
-            if (currentChapter < chapters.size - 1) loadChapter(currentChapter + 1)
+            if (currentChapter < chapters.size-1) loadChapter(currentChapter+1)
             else Toast.makeText(this@ReaderActivity, "Fin del libro", Toast.LENGTH_SHORT).show()
         }
-
         @JavascriptInterface
         fun onPrevChapter() = runOnUiThread {
-            if (currentChapter > 0) loadChapter(currentChapter - 1, initialPage = -1)
+            if (currentChapter > 0) loadChapter(currentChapter-1, initialPage = -1)
         }
     }
 
