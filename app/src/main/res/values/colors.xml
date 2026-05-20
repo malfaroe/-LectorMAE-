@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#121212</color>
+    <color name="surface">#1E1E1E</color>
+    <color name="primary">#C8965A</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#9E9E9E</color>
+    <color name="epub_color">#4CAF50</color>
+    <color name="pdf_color">#EF5350</color>
+    <color name="epub_cover">#1B3A2A</color>
+    <color name="pdf_cover">#3A1B1B</color>
+</resources>
