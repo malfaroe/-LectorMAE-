@@ -105,6 +105,7 @@ object EpubParser {
 
         val toc = (navHref?.let { parseTocNav(File(opfDir, it), opfDir, chapters) }?.takeIf { it.isNotEmpty() })
             ?: (ncxHref?.let { parseTocNcx(File(opfDir, it), opfDir, chapters) }?.takeIf { it.isNotEmpty() })
+            ?: tocFromHeadings(chapters).takeIf { it.isNotEmpty() }
             ?: defaultToc(chapters)
 
         ParsedEpub(title, author, chapters, toc)
@@ -181,6 +182,30 @@ object EpubParser {
             } ?: return emptyList()
             val ol = kids(toc).find { it.nodeName == "ol" } ?: return emptyList()
             parseOl(ol, 0)
+        }
+        return result
+    }
+
+    // ── Fallback: scan h1/h2/h3 from content ─────────────────────────────────
+
+    private fun tocFromHeadings(chapters: List<Chapter>): List<TocItem> {
+        val result  = mutableListOf<TocItem>()
+        val tagRe   = Regex("""<(h[1-3])([^>]*)>([\s\S]*?)</h[1-3]>""", RegexOption.IGNORE_CASE)
+        val idRe    = Regex("""id=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val stripRe = Regex("""<[^>]+>""")
+
+        chapters.forEachIndexed { idx, chapter ->
+            runCatching {
+                tagRe.findAll(chapter.file.readText()).forEach { m ->
+                    val tag   = m.groupValues[1].lowercase()
+                    val attrs = m.groupValues[2]
+                    val label = m.groupValues[3].replace(stripRe, "").trim()
+                    if (label.isEmpty()) return@forEach
+                    val anchor = idRe.find(attrs)?.groupValues?.get(1)?.ifEmpty { null }
+                    val depth  = tag[1].digitToInt() - 1   // h1→0, h2→1, h3→2
+                    result.add(TocItem(label, idx, anchor, depth))
+                }
+            }
         }
         return result
     }

@@ -172,6 +172,7 @@ class ReaderActivity : AppCompatActivity() {
                 else
                     loadChapter(item.chapterIndex, anchor = item.anchor)
             }
+            .setNegativeButton("Cerrar", null)
             .show()
     }
 
