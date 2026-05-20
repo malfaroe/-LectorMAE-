@@ -1,7 +1,11 @@
 package com.lectormae.ui.reader
 
+import android.content.Context
 import android.os.Bundle
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -16,13 +20,18 @@ import kotlinx.coroutines.withContext
 class ReaderActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityReaderBinding
-    private var chapters = listOf<EpubParser.Chapter>()
+    private var chapters  = listOf<EpubParser.Chapter>()
     private var currentChapter = 0
+    private var fontSize   = 18
+
+    private val prefs by lazy { getSharedPreferences("reader_prefs", Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityReaderBinding.inflate(layoutInflater)
         setContentView(b.root)
+
+        fontSize = prefs.getInt("font_size", 18)
 
         setSupportActionBar(b.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -33,9 +42,12 @@ class ReaderActivity : AppCompatActivity() {
         supportActionBar?.title = bookTitle
 
         setupWebView()
+        setupTapNavigation()
 
-        b.btnPrev.setOnClickListener { loadChapter(currentChapter - 1) }
-        b.btnNext.setOnClickListener { loadChapter(currentChapter + 1) }
+        b.btnFontDec.setOnClickListener { changeFontSize(-2) }
+        b.btnFontInc.setOnClickListener { changeFontSize(+2) }
+        b.btnPrev.setOnClickListener   { navigatePrev() }
+        b.btnNext.setOnClickListener   { navigateNext() }
 
         b.progressBar.visibility = View.VISIBLE
         lifecycleScope.launch {
@@ -61,52 +73,125 @@ class ReaderActivity : AppCompatActivity() {
     @Suppress("SetJavaScriptEnabled", "DEPRECATION")
     private fun setupWebView() {
         b.webView.settings.apply {
-            javaScriptEnabled        = false
-            builtInZoomControls      = true
-            displayZoomControls      = false
-            setSupportZoom(true)
-            allowFileAccess                = true
-            allowFileAccessFromFileURLs    = true
+            javaScriptEnabled                = true
+            builtInZoomControls              = false
+            setSupportZoom(false)
+            allowFileAccess                  = true
+            allowFileAccessFromFileURLs      = true
             allowUniversalAccessFromFileURLs = true
         }
         b.webView.setBackgroundColor(0xFF121212.toInt())
+        b.webView.addJavascriptInterface(JsBridge(), "Android")
         b.webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
         }
     }
 
-    private fun loadChapter(index: Int) {
+    private fun setupTapNavigation() {
+        val gesture = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                val w = b.webView.width
+                when {
+                    e.x < w * 0.35f -> navigatePrev()
+                    e.x > w * 0.65f -> navigateNext()
+                }
+                return true
+            }
+        })
+        b.webView.setOnTouchListener { _, event -> gesture.onTouchEvent(event); false }
+    }
+
+    private fun navigateNext() = b.webView.evaluateJavascript("lmNext()", null)
+    private fun navigatePrev() = b.webView.evaluateJavascript("lmPrev()", null)
+
+    private fun loadChapter(index: Int, goToLast: Boolean = false) {
         if (index < 0 || index >= chapters.size) return
         currentChapter = index
         val file = chapters[index].file
-        // Use loadDataWithBaseURL so relative CSS/images resolve correctly
-        val html = file.readText()
-        b.webView.loadDataWithBaseURL(
-            "file://${file.parent}/",
-            injectDarkStyle(html),
-            "text/html",
-            "UTF-8",
-            null
-        )
-        b.tvChapterCount.text = "${index + 1} / ${chapters.size}"
-        b.btnPrev.isEnabled = index > 0
-        b.btnNext.isEnabled = index < chapters.size - 1
+        val html = buildHtml(file.readText(), fontSize, goToLast)
+        b.webView.loadDataWithBaseURL("file://${file.parent}/", html, "text/html", "UTF-8", null)
     }
 
-    private fun injectDarkStyle(html: String): String {
+    private fun changeFontSize(delta: Int) {
+        fontSize = (fontSize + delta).coerceIn(12, 30)
+        prefs.edit().putInt("font_size", fontSize).apply()
+        loadChapter(currentChapter)
+    }
+
+    private fun buildHtml(original: String, size: Int, goToLast: Boolean): String {
         val style = """
-            <style>
-              body { background:#121212 !important; color:#E0E0E0 !important;
-                     font-family: Georgia, serif; font-size: 18px;
-                     line-height: 1.7; padding: 16px; margin: 0; }
-              a    { color:#C8965A !important; }
-              img  { max-width:100% !important; height:auto !important; }
-            </style>
-        """.trimIndent()
-        return if (html.contains("</head>", ignoreCase = true))
-            html.replace("</head>", "$style</head>", ignoreCase = true)
+            <style id="_lm_style">
+              html {
+                -webkit-column-width: 100vw; column-width: 100vw;
+                -webkit-column-gap: 0px;     column-gap: 0px;
+                height: 100%; overflow: hidden;
+              }
+              body {
+                background: #121212 !important;
+                color: #E0E0E0 !important;
+                font-size: ${size}px !important;
+                font-family: Georgia, serif !important;
+                line-height: 1.75 !important;
+                margin: 0 !important;
+                padding: 12px 16px !important;
+                box-sizing: border-box !important;
+                overflow: hidden !important;
+                height: 100% !important;
+              }
+              a            { color: #C8965A !important; }
+              img          { max-width: 100% !important; height: auto !important; }
+              h1, h2, h3   { color: #FFFFFF !important; }
+            </style>""".trimIndent()
+
+        val script = """
+            <script id="_lm_script">
+              var _p = 0, _t = 1;
+              function lmInit() {
+                _t = Math.max(1, Math.ceil(document.documentElement.scrollWidth / window.innerWidth));
+                _p = ${if (goToLast) "_t - 1" else "0"};
+                document.documentElement.scrollLeft = _p * window.innerWidth;
+                Android.onPageInfo(_p, _t);
+              }
+              function lmNext() {
+                if (_p < _t - 1) {
+                  _p++; document.documentElement.scrollLeft = _p * window.innerWidth;
+                  Android.onPageInfo(_p, _t);
+                } else { Android.onNextChapter(); }
+              }
+              function lmPrev() {
+                if (_p > 0) {
+                  _p--; document.documentElement.scrollLeft = _p * window.innerWidth;
+                  Android.onPageInfo(_p, _t);
+                } else { Android.onPrevChapter(); }
+              }
+              window.addEventListener('load', function() { setTimeout(lmInit, 150); });
+            </script>""".trimIndent()
+
+        val injection = style + script
+        return if (original.contains("</head>", ignoreCase = true))
+            original.replace("</head>", "$injection</head>", ignoreCase = true)
         else
-            "$style$html"
+            "$injection$original"
+    }
+
+    inner class JsBridge {
+        @JavascriptInterface
+        fun onPageInfo(page: Int, total: Int) = runOnUiThread {
+            b.tvChapterCount.text = "Cap ${currentChapter + 1}/${chapters.size}  ·  Pág ${page + 1}/$total"
+            b.btnPrev.isEnabled = page > 0 || currentChapter > 0
+            b.btnNext.isEnabled = page < total - 1 || currentChapter < chapters.size - 1
+        }
+
+        @JavascriptInterface
+        fun onNextChapter() = runOnUiThread {
+            if (currentChapter < chapters.size - 1) loadChapter(currentChapter + 1)
+            else Toast.makeText(this@ReaderActivity, "Fin del libro", Toast.LENGTH_SHORT).show()
+        }
+
+        @JavascriptInterface
+        fun onPrevChapter() = runOnUiThread {
+            if (currentChapter > 0) loadChapter(currentChapter - 1, goToLast = true)
+        }
     }
 
     companion object {

@@ -16,6 +16,7 @@
             android:background="@color/surface"/>
     </com.google.android.material.appbar.AppBarLayout>
 
+    <!-- Reading area -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -34,23 +35,40 @@
             android:visibility="gone"/>
     </FrameLayout>
 
-    <!-- Bottom navigation -->
+    <!-- Bottom bar: font size + navigation + page counter -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="52dp"
         android:orientation="horizontal"
         android:background="@color/surface"
         android:gravity="center_vertical"
-        android:paddingHorizontal="12dp">
+        android:paddingHorizontal="4dp">
 
+        <!-- Font size -->
+        <Button
+            android:id="@+id/btnFontDec"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="A−"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"/>
+
+        <!-- Page back -->
         <Button
             android:id="@+id/btnPrev"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="← Anterior"
-            android:textColor="@color/primary"/>
+            android:text="‹"
+            android:textColor="@color/primary"
+            android:textSize="22sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"/>
 
+        <!-- Counter -->
         <TextView
             android:id="@+id/tvChapterCount"
             android:layout_width="0dp"
@@ -58,16 +76,33 @@
             android:layout_weight="1"
             android:gravity="center"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:text="1 / 1"/>
+            android:textSize="11sp"
+            android:text="Cap 1/1  ·  Pág 1/1"/>
 
+        <!-- Page forward -->
         <Button
             android:id="@+id/btnNext"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Siguiente →"
-            android:textColor="@color/primary"/>
+            android:text="›"
+            android:textColor="@color/primary"
+            android:textSize="22sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"/>
+
+        <!-- Font size -->
+        <Button
+            android:id="@+id/btnFontInc"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="A+"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="8dp"/>
+
     </LinearLayout>
 
 </LinearLayout>
