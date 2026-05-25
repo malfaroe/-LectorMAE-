@@ -109,11 +109,19 @@ class ReaderActivity : AppCompatActivity() {
             allowFileAccess                  = true
             allowFileAccessFromFileURLs      = true
             allowUniversalAccessFromFileURLs = true
+            textZoom                         = 100  // ignore system font-size scaling
         }
+        b.webView.overScrollMode = View.OVER_SCROLL_NEVER
+        b.webView.isHorizontalScrollBarEnabled = false
+        b.webView.isVerticalScrollBarEnabled   = false
         b.webView.setBackgroundColor(0xFF121212.toInt())
         b.webView.addJavascriptInterface(JsBridge(), "Android")
         b.webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+            override fun onPageFinished(view: WebView, url: String) {
+                // Lock native scroll after every page load
+                view.scrollTo(0, 0)
+            }
         }
     }
 
@@ -142,6 +150,7 @@ class ReaderActivity : AppCompatActivity() {
         if (index !in chapters.indices) return
         currentChapter = index
         currentPage    = 0
+        b.webView.scrollTo(0, 0)
         val file = chapters[index].file
         b.webView.loadDataWithBaseURL(
             "file://${file.parent}/",
@@ -199,8 +208,9 @@ class ReaderActivity : AppCompatActivity() {
               h1,h2,h3 { color:#FFFFFF !important; }
             </style>""".trimIndent()
 
-        // _w = exact page stride in px, derived from document.documentElement.clientWidth.
-        // Column-width is set in JS using the same source so CSS and translate always agree.
+            // _w = exact page stride in px derived from screen.width (physical pixels / devicePixelRatio).
+        // Using screen.width avoids the layout-viewport vs visual-viewport mismatch that
+        // occurs when the EPUB has its own <meta viewport> with a non-device width.
         val script = """
             <script id="_lm_js">
               var _p=0,_t=1,_w=0;
@@ -212,7 +222,8 @@ class ReaderActivity : AppCompatActivity() {
                 document.body.appendChild(p);
               }
               function lmApplyColumns(){
-                _w = document.documentElement.clientWidth;
+                // window.innerWidth after forcing device-width viewport = reliable CSS px width
+                _w = window.innerWidth;
                 var colW = (_w - 32) + 'px';
                 var el = _pg();
                 el.style.setProperty('-webkit-column-width', colW, 'important');
@@ -222,11 +233,16 @@ class ReaderActivity : AppCompatActivity() {
               }
               function lmMeasure(){
                 _pg().style.transform='none';
+                window.scrollTo(0,0);
                 var r=document.getElementById('_lm_end').getBoundingClientRect();
                 _t=Math.max(1, Math.floor(r.left/_w)+1);
               }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
+                // Reset any native WebView scroll before applying our transform
+                window.scrollTo(0,0);
+                document.documentElement.scrollLeft=0;
+                document.body.scrollLeft=0;
                 _pg().style.transform='translateX(-'+(_p*_w)+'px)';
                 Android.onPageInfo(_p,_t);
               }
@@ -238,7 +254,7 @@ class ReaderActivity : AppCompatActivity() {
                   var start=ip<0?_t-1:ip;
                   if(anchor){
                     var el=document.getElementById(anchor);
-                    if(el){ _pg().style.transform='none'; start=Math.floor(el.getBoundingClientRect().left/_w); }
+                    if(el){ _pg().style.transform='none'; window.scrollTo(0,0); start=Math.floor(el.getBoundingClientRect().left/_w); }
                   }
                   lmGoPage(start);
                 }, 150);
@@ -248,15 +264,21 @@ class ReaderActivity : AppCompatActivity() {
               function lmGoToAnchor(id){
                 var el=document.getElementById(id); if(!el) return;
                 _pg().style.transform='none';
+                window.scrollTo(0,0);
                 lmGoPage(Math.floor(el.getBoundingClientRect().left/_w));
               }
               window.addEventListener('load', function(){ setTimeout(lmInit, 200); });
             </script>""".trimIndent()
 
-        val inject = style + script
-        return if (original.contains("</head>", ignoreCase = true))
-            original.replace("</head>", "$inject</head>", ignoreCase = true)
-        else "$inject$original"
+        // Strip any existing viewport meta from the EPUB so our injected one takes effect
+        val strippedHtml = original.replace(
+            Regex("<meta[^>]+name=[\"']viewport[\"'][^>]*/?>", RegexOption.IGNORE_CASE), ""
+        )
+        val viewport = """<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">"""
+        val inject = viewport + style + script
+        return if (strippedHtml.contains("</head>", ignoreCase = true))
+            strippedHtml.replace("</head>", "$inject</head>", ignoreCase = true)
+        else "$inject$strippedHtml"
     }
 
     // ── JS bridge ────────────────────────────────────────────────────────────
