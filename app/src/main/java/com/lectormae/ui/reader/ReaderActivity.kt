@@ -190,23 +190,20 @@ class ReaderActivity : AppCompatActivity() {
               }
               body { color:#E0E0E0 !important; font-size:${size}px !important;
                      font-family:Georgia,serif !important; line-height:1.75 !important; }
-              /* Pagination wrapper — columns extend horizontally.
-                 column-width + column-gap = 100vw so each page aligns to screen width. */
               #_lm_p {
                 height:100vh; box-sizing:border-box; padding:12px 16px;
-                -webkit-column-width:calc(100vw - 32px); column-width:calc(100vw - 32px);
-                -webkit-column-gap:32px; column-gap:32px; column-fill:auto;
+                column-fill:auto; -webkit-column-fill:auto;
               }
               a        { color:#C8965A !important; }
-              img      { max-width:calc(100vw - 32px) !important; height:auto !important; }
+              img      { max-width:100% !important; height:auto !important; }
               h1,h2,h3 { color:#FFFFFF !important; }
             </style>""".trimIndent()
 
-        // Page count uses an end-marker's getBoundingClientRect().left — avoids
-        // the scrollWidth=clientWidth bug that appears when parent has overflow:hidden.
+        // _w = exact page stride in px, derived from document.documentElement.clientWidth.
+        // Column-width is set in JS using the same source so CSS and translate always agree.
         val script = """
             <script id="_lm_js">
-              var _p=0,_t=1;
+              var _p=0,_t=1,_w=0;
               function _pg(){ return document.getElementById('_lm_p'); }
               function lmWrap(){
                 var p=document.createElement('div'); p.id='_lm_p';
@@ -214,34 +211,46 @@ class ReaderActivity : AppCompatActivity() {
                 var m=document.createElement('span'); m.id='_lm_end'; p.appendChild(m);
                 document.body.appendChild(p);
               }
+              function lmApplyColumns(){
+                _w = document.documentElement.clientWidth;
+                var colW = (_w - 32) + 'px';
+                var el = _pg();
+                el.style.setProperty('-webkit-column-width', colW, 'important');
+                el.style.setProperty('column-width',         colW, 'important');
+                el.style.setProperty('-webkit-column-gap',  '32px','important');
+                el.style.setProperty('column-gap',          '32px','important');
+              }
               function lmMeasure(){
                 _pg().style.transform='none';
                 var r=document.getElementById('_lm_end').getBoundingClientRect();
-                _t=Math.max(1, Math.floor(r.left/window.innerWidth)+1);
+                _t=Math.max(1, Math.floor(r.left/_w)+1);
               }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                _pg().style.transform='translateX(-'+(_p*window.innerWidth)+'px)';
+                _pg().style.transform='translateX(-'+(_p*_w)+'px)';
                 Android.onPageInfo(_p,_t);
               }
               function lmInit(){
-                lmWrap(); lmMeasure();
-                var anchor=$anchorJs, ip=$initialPage;
-                var start=ip<0?_t-1:ip;
-                if(anchor){
-                  var el=document.getElementById(anchor);
-                  if(el){ _pg().style.transform='none'; start=Math.floor(el.getBoundingClientRect().left/window.innerWidth); }
-                }
-                lmGoPage(start);
+                lmWrap(); lmApplyColumns();
+                setTimeout(function(){
+                  lmMeasure();
+                  var anchor=$anchorJs, ip=$initialPage;
+                  var start=ip<0?_t-1:ip;
+                  if(anchor){
+                    var el=document.getElementById(anchor);
+                    if(el){ _pg().style.transform='none'; start=Math.floor(el.getBoundingClientRect().left/_w); }
+                  }
+                  lmGoPage(start);
+                }, 150);
               }
               function lmNext(){ if(_p<_t-1) lmGoPage(_p+1); else Android.onNextChapter(); }
               function lmPrev(){ if(_p>0) lmGoPage(_p-1); else Android.onPrevChapter(); }
               function lmGoToAnchor(id){
                 var el=document.getElementById(id); if(!el) return;
                 _pg().style.transform='none';
-                lmGoPage(Math.floor(el.getBoundingClientRect().left/window.innerWidth));
+                lmGoPage(Math.floor(el.getBoundingClientRect().left/_w));
               }
-              window.addEventListener('load', function(){ setTimeout(lmInit, 250); });
+              window.addEventListener('load', function(){ setTimeout(lmInit, 200); });
             </script>""".trimIndent()
 
         val inject = style + script
