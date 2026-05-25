@@ -192,7 +192,6 @@ class ReaderActivity : AppCompatActivity() {
               html, body {
                 margin:0 !important; padding:0 !important;
                 width:100% !important; background:#121212 !important;
-                overflow:hidden !important;
               }
               body {
                 color:#E0E0E0 !important; font-size:${size}px !important;
