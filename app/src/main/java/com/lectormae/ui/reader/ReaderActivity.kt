@@ -196,7 +196,7 @@ class ReaderActivity : AppCompatActivity() {
               body {
                 color:#E0E0E0 !important; font-size:${size}px !important;
                 font-family:Georgia,serif !important; line-height:1.75 !important;
-                padding:12px 16px !important; box-sizing:border-box !important;
+                padding:0 16px !important; box-sizing:border-box !important;
               }
               a        { color:#C8965A !important; }
               img      { max-width:100% !important; height:auto !important; }
@@ -217,8 +217,6 @@ class ReaderActivity : AppCompatActivity() {
               }
               function lmMeasure(){
                 _h = window.innerHeight;
-                var lh = parseFloat(window.getComputedStyle(document.body).lineHeight);
-                if(lh>1){ var a=Math.floor(_h/lh)*lh; if(a>10) _h=a; }
                 var contentH = document.getElementById('_lm_w').offsetHeight || _h;
                 _t = Math.max(1, Math.ceil(contentH/_h));
               }
