@@ -118,10 +118,7 @@ class ReaderActivity : AppCompatActivity() {
         b.webView.addJavascriptInterface(JsBridge(), "Android")
         b.webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
-            override fun onPageFinished(view: WebView, url: String) {
-                // Lock native scroll after every page load
-                view.scrollTo(0, 0)
-            }
+            override fun onPageFinished(view: WebView, url: String) { }
         }
     }
 
@@ -194,78 +191,67 @@ class ReaderActivity : AppCompatActivity() {
             <style id="_lm">
               html, body {
                 margin:0 !important; padding:0 !important;
-                width:100% !important; height:100% !important;
-                overflow:hidden !important; background:#121212 !important;
+                width:100% !important; background:#121212 !important;
+                overflow:hidden !important;
               }
-              body { color:#E0E0E0 !important; font-size:${size}px !important;
-                     font-family:Georgia,serif !important; line-height:1.75 !important; }
-              #_lm_p {
-                height:100vh; box-sizing:border-box; padding:12px 16px;
-                column-fill:auto; -webkit-column-fill:auto;
-                overflow-x:hidden; overflow-y:hidden;
+              body {
+                color:#E0E0E0 !important; font-size:${size}px !important;
+                font-family:Georgia,serif !important; line-height:1.75 !important;
+                padding:12px 16px !important; box-sizing:border-box !important;
               }
               a        { color:#C8965A !important; }
               img      { max-width:100% !important; height:auto !important; }
+              table    { max-width:100% !important; word-break:break-word !important; }
               h1,h2,h3 { color:#FFFFFF !important; }
             </style>""".trimIndent()
 
-            // _w = exact page stride in px derived from screen.width (physical pixels / devicePixelRatio).
-        // Using screen.width avoids the layout-viewport vs visual-viewport mismatch that
-        // occurs when the EPUB has its own <meta viewport> with a non-device width.
+        // Pagination via vertical scroll: webView.scrollTo(0, page*_h) from Kotlin.
+        // _h is aligned to line-height so pages never cut a text line in half.
+        // No CSS columns — eliminates all horizontal coordinate drift.
         val script = """
             <script id="_lm_js">
-              var _p=0,_t=1,_w=0;
-              function _pg(){ return document.getElementById('_lm_p'); }
+              var _p=0,_t=1,_h=0;
               function lmWrap(){
-                var p=document.createElement('div'); p.id='_lm_p';
-                while(document.body.firstChild) p.appendChild(document.body.firstChild);
-                var m=document.createElement('span'); m.id='_lm_end'; p.appendChild(m);
-                document.body.appendChild(p);
-              }
-              function lmApplyColumns(){
-                // window.innerWidth after forcing device-width viewport = reliable CSS px width
-                _w = window.innerWidth;
-                var colW = (_w - 32) + 'px';
-                var el = _pg();
-                el.style.setProperty('-webkit-column-width', colW, 'important');
-                el.style.setProperty('column-width',         colW, 'important');
-                el.style.setProperty('-webkit-column-gap',  '32px','important');
-                el.style.setProperty('column-gap',          '32px','important');
+                var w=document.createElement('div'); w.id='_lm_w';
+                while(document.body.firstChild) w.appendChild(document.body.firstChild);
+                document.body.appendChild(w);
               }
               function lmMeasure(){
-                var el=_pg(); el.scrollLeft=0;
-                window.scrollTo(0,0);
-                var r=document.getElementById('_lm_end').getBoundingClientRect();
-                _t=Math.max(1, Math.floor(r.left/_w)+1);
+                _h = window.innerHeight;
+                var lh = parseFloat(window.getComputedStyle(document.body).lineHeight);
+                if(lh>1){ var a=Math.floor(_h/lh)*lh; if(a>10) _h=a; }
+                var contentH = document.getElementById('_lm_w').offsetHeight || _h;
+                _t = Math.max(1, Math.ceil(contentH/_h));
+              }
+              function lmAbsTop(el){
+                var t=0,c=el;
+                while(c&&c!==document.body){t+=c.offsetTop;c=c.offsetParent;}
+                return t;
               }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                window.scrollTo(0,0);
-                _pg().scrollLeft=_p*_w;
-                Android.onPageInfo(_p,_t);
+                Android.onPageInfo(_p,_t,Math.round(_h));
               }
               function lmInit(){
-                lmWrap(); lmApplyColumns();
+                lmWrap();
                 setTimeout(function(){
                   lmMeasure();
                   var anchor=$anchorJs, ip=$initialPage;
                   var start=ip<0?_t-1:ip;
                   if(anchor){
                     var el=document.getElementById(anchor);
-                    if(el){ _pg().scrollLeft=0; window.scrollTo(0,0); start=Math.floor(el.getBoundingClientRect().left/_w); }
+                    if(el) start=Math.floor(lmAbsTop(el)/_h);
                   }
                   lmGoPage(start);
-                }, 150);
+                }, 300);
               }
               function lmNext(){ if(_p<_t-1) lmGoPage(_p+1); else Android.onNextChapter(); }
               function lmPrev(){ if(_p>0) lmGoPage(_p-1); else Android.onPrevChapter(); }
               function lmGoToAnchor(id){
                 var el=document.getElementById(id); if(!el) return;
-                _pg().scrollLeft=0;
-                window.scrollTo(0,0);
-                lmGoPage(Math.floor(el.getBoundingClientRect().left/_w));
+                lmGoPage(Math.floor(lmAbsTop(el)/_h));
               }
-              window.addEventListener('load', function(){ setTimeout(lmInit, 200); });
+              window.addEventListener('load', function(){ setTimeout(lmInit,100); });
             </script>""".trimIndent()
 
         // Strip any existing viewport meta from the EPUB so our injected one takes effect
@@ -283,8 +269,9 @@ class ReaderActivity : AppCompatActivity() {
 
     inner class JsBridge {
         @JavascriptInterface
-        fun onPageInfo(page: Int, total: Int) = runOnUiThread {
+        fun onPageInfo(page: Int, total: Int, pageHeight: Int) = runOnUiThread {
             currentPage = page
+            b.webView.scrollTo(0, page * pageHeight)
             savePosition()
             b.tvChapterCount.text = "Cap ${currentChapter+1}/${chapters.size}  ·  Pág ${page+1}/$total"
             b.btnPrev.isEnabled = page > 0 || currentChapter > 0
