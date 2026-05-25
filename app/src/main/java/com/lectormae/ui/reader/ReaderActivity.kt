@@ -202,6 +202,7 @@ class ReaderActivity : AppCompatActivity() {
               #_lm_p {
                 height:100vh; box-sizing:border-box; padding:12px 16px;
                 column-fill:auto; -webkit-column-fill:auto;
+                overflow-x:hidden; overflow-y:hidden;
               }
               a        { color:#C8965A !important; }
               img      { max-width:100% !important; height:auto !important; }
@@ -232,18 +233,15 @@ class ReaderActivity : AppCompatActivity() {
                 el.style.setProperty('column-gap',          '32px','important');
               }
               function lmMeasure(){
-                _pg().style.transform='none';
+                var el=_pg(); el.scrollLeft=0;
                 window.scrollTo(0,0);
                 var r=document.getElementById('_lm_end').getBoundingClientRect();
                 _t=Math.max(1, Math.floor(r.left/_w)+1);
               }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                // Reset any native WebView scroll before applying our transform
                 window.scrollTo(0,0);
-                document.documentElement.scrollLeft=0;
-                document.body.scrollLeft=0;
-                _pg().style.transform='translateX(-'+(_p*_w)+'px)';
+                _pg().scrollLeft=_p*_w;
                 Android.onPageInfo(_p,_t);
               }
               function lmInit(){
@@ -254,7 +252,7 @@ class ReaderActivity : AppCompatActivity() {
                   var start=ip<0?_t-1:ip;
                   if(anchor){
                     var el=document.getElementById(anchor);
-                    if(el){ _pg().style.transform='none'; window.scrollTo(0,0); start=Math.floor(el.getBoundingClientRect().left/_w); }
+                    if(el){ _pg().scrollLeft=0; window.scrollTo(0,0); start=Math.floor(el.getBoundingClientRect().left/_w); }
                   }
                   lmGoPage(start);
                 }, 150);
@@ -263,7 +261,7 @@ class ReaderActivity : AppCompatActivity() {
               function lmPrev(){ if(_p>0) lmGoPage(_p-1); else Android.onPrevChapter(); }
               function lmGoToAnchor(id){
                 var el=document.getElementById(id); if(!el) return;
-                _pg().style.transform='none';
+                _pg().scrollLeft=0;
                 window.scrollTo(0,0);
                 lmGoPage(Math.floor(el.getBoundingClientRect().left/_w));
               }

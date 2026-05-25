@@ -5,28 +5,81 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Book body -->
+    <!-- Page edges visible at bottom spine -->
     <path
-        android:fillColor="#C8965A"
-        android:pathData="M30,26 C30,26 30,82 30,82 C30,84.2 31.8,86 34,86 L76,86 C78.2,86 80,84.2 80,82 L80,34 C80,31.8 78.2,30 76,30 L38,30 L38,22 L30,26 Z"/>
-    <!-- Spine shadow -->
+        android:fillColor="#D4930A"
+        android:pathData="M20,79 L54,85 L88,79 L88,82 L54,88 L20,82 Z"/>
+
+    <!-- Left page -->
     <path
-        android:fillColor="#A0743A"
-        android:pathData="M38,22 L38,30 L76,30 C78.2,30 80,31.8 80,34 L80,82 C80,84.2 78.2,86 76,86 L34,86 C31.8,86 30,84.2 30,82 L30,26 L38,22 Z"/>
-    <!-- Lines on book -->
+        android:fillColor="#FFF8E1"
+        android:pathData="M20,79 C18,52 25,20 54,18 L54,85 C42,85 20,81 20,79 Z"/>
+
+    <!-- Left page inner shading for depth -->
     <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
-        android:strokeAlpha="0.6"
-        android:pathData="M44,46 L72,46"/>
+        android:fillColor="#C8A060"
+        android:fillAlpha="0.35"
+        android:pathData="M47,79 C44,52 48,22 54,18 L54,85 C52,85 47,81 47,79 Z"/>
+
+    <!-- Right page -->
     <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
-        android:strokeAlpha="0.6"
-        android:pathData="M44,56 L72,56"/>
+        android:fillColor="#FFFDE7"
+        android:pathData="M88,79 C90,52 83,20 54,18 L54,85 C66,85 88,81 88,79 Z"/>
+
+    <!-- Right page inner shading for depth -->
     <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
-        android:strokeAlpha="0.6"
-        android:pathData="M44,66 L62,66"/>
+        android:fillColor="#C8A060"
+        android:fillAlpha="0.35"
+        android:pathData="M61,79 C64,52 60,22 54,18 L54,85 C56,85 61,81 61,79 Z"/>
+
+    <!-- Golden spine glow -->
+    <path
+        android:fillColor="#FFD740"
+        android:fillAlpha="0.95"
+        android:pathData="M52,18 C51,50 52,85 54,85 C56,85 57,50 56,18 Q54,16 52,18 Z"/>
+
+    <!-- Text lines — left page -->
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M34,35 L52,33"/>
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,45 L52,43"/>
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M31,55 L52,53"/>
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M32,65 L52,63"/>
+
+    <!-- Text lines — right page -->
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M56,33 L74,35"/>
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M56,43 L76,45"/>
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M56,53 L77,55"/>
+    <path
+        android:strokeColor="#B8956A"
+        android:strokeWidth="2"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M56,63 L76,65"/>
+
 </vector>
