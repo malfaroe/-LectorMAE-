@@ -171,48 +171,56 @@ class ReaderActivity : AppCompatActivity() {
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
+        // overflow:hidden en body es lo que recorta las columnas de forma limpia
         val style = """
             <style>
-              html,body{margin:0!important;padding:0!important;background:#121212!important;}
-              body{color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;padding:0 16px!important;box-sizing:border-box!important;}
+              html,body{margin:0!important;padding:0!important;background:#121212!important;overflow:hidden!important;}
+              body{color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;}
               img{max-width:100%!important;height:auto!important;}
               a{color:#C8965A!important;}
               h1,h2,h3{color:#FFFFFF!important;}
               table{max-width:100%!important;}
             </style>""".trimIndent()
 
+        // Todo el contenido se mueve a div#lm; las columnas se aplican al wrapper,
+        // no al body, para aislar el layout del CSS del EPUB.
         val script = """
             <script>
             (function(){
               var _p=0,_t=1,_vw=0;
+              function lmWrap(){
+                var d=document.createElement('div');d.id='lm';
+                while(document.body.firstChild)d.appendChild(document.body.firstChild);
+                document.body.appendChild(d);
+              }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                window.scrollTo(_p*_vw,0);
+                document.getElementById('lm').style.transform='translateX('+(-_p*_vw)+'px)';
                 Android.onPageInfo(_p,_t);
               }
               function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
                 var el=document.getElementById(id);if(!el)return;
-                var x=el.getBoundingClientRect().left+window.pageXOffset;
-                lmGoPage(Math.max(0,Math.min(Math.floor(x/_vw),_t-1)));
+                var x=el.getBoundingClientRect().left+_p*_vw;
+                lmGoPage(Math.max(0,Math.min(Math.round(x/_vw),_t-1)));
               }
               function lmInit(ip,anchor){
+                lmWrap();
                 _vw=window.innerWidth;
                 var vh=window.innerHeight;
                 document.body.style.height=vh+'px';
-                document.body.style.columnWidth=_vw+'px';
-                document.body.style.columnGap='0px';
-                document.body.style.columnFill='auto';
+                var d=document.getElementById('lm');
+                d.style.cssText='height:'+vh+'px;column-width:'+_vw+'px;column-gap:0;column-fill:auto;padding:0 16px;box-sizing:border-box;';
                 var lastW=0,tries=0;
                 function check(){
-                  var w=document.body.scrollWidth;
-                  if(w>0&&(w===lastW||tries>=10)){
-                    _t=Math.max(1,Math.ceil(w/_vw));
+                  var sw=d.scrollWidth;
+                  if(sw>0&&(sw===lastW||tries>=10)){
+                    _t=Math.max(1,Math.round(sw/_vw));
                     var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
-                    if(anchor){var el=document.getElementById(anchor);if(el){var x=el.getBoundingClientRect().left+window.pageXOffset;start=Math.max(0,Math.min(Math.floor(x/_vw),_t-1));}}
+                    if(anchor){var el=document.getElementById(anchor);if(el){var x=el.getBoundingClientRect().left+_p*_vw;start=Math.max(0,Math.min(Math.round(x/_vw),_t-1));}}
                     lmGoPage(start);
-                  }else{lastW=w;tries++;setTimeout(check,100);}
+                  }else{lastW=sw;tries++;setTimeout(check,100);}
                 }
                 setTimeout(check,100);
               }
