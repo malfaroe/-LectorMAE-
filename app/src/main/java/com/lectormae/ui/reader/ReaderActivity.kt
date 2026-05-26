@@ -189,13 +189,18 @@ class ReaderActivity : AppCompatActivity() {
             <script>
             (function(){
               var _p=0,_t=1,_vh=0,_breaks=[],_totalH=0;
+              var BTAGS={p:1,div:1,h1:1,h2:1,h3:1,h4:1,h5:1,h6:1,li:1,blockquote:1,pre:1,section:1,article:1,figure:1,figcaption:1,td:1,th:1};
+              function bodyTop(el){
+                var y=0,node=el;
+                while(node&&node!==document.body){y+=node.offsetTop;node=node.offsetParent;}
+                return y;
+              }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
                 var y=_breaks[_p]||0;
                 var nextY=(_p+1<_t)?_breaks[_p+1]:_totalH;
-                var clipBottom=Math.max(0,_totalH-nextY);
                 document.body.style.setProperty('transform','translateY(-'+y+'px)','important');
-                document.body.style.setProperty('clip-path','inset(0 0 '+clipBottom+'px 0)','important');
+                document.body.style.setProperty('clip-path','inset(0 0 '+Math.max(0,_totalH-nextY)+'px 0)','important');
                 document.body.style.setProperty('visibility','visible','important');
                 Android.onPageInfo(_p,_t);
               }
@@ -203,19 +208,25 @@ class ReaderActivity : AppCompatActivity() {
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
                 var el=document.getElementById(id);if(!el)return;
-                var nat=el.getBoundingClientRect().top+(_breaks[_p]||0);
+                var nat=bodyTop(el);
                 for(var i=_breaks.length-1;i>=0;i--){if(_breaks[i]<=nat){lmGoPage(i);return;}}
                 lmGoPage(0);
               }
               function buildBreaks(){
                 var brks=[0],pageStart=0;
-                var els=document.body.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre');
-                for(var i=0;i<els.length;i++){
-                  var el=els[i];if(!el.offsetHeight)continue;
-                  var top=el.getBoundingClientRect().top;
+                var all=document.body.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote,pre,section,article,figure,figcaption');
+                for(var i=0;i<all.length;i++){
+                  var el=all[i];
+                  if(!el.offsetHeight)continue;
+                  var hasBlockChild=false;
+                  for(var c=el.firstElementChild;c;c=c.nextElementSibling){
+                    if(BTAGS[c.tagName.toLowerCase()]&&c.offsetHeight){hasBlockChild=true;break;}
+                  }
+                  if(hasBlockChild)continue;
+                  var top=bodyTop(el);
                   var bottom=top+el.offsetHeight;
-                  while(bottom>pageStart+_vh+4){
-                    if(top>pageStart+4){brks.push(top);pageStart=top;}
+                  while(bottom>pageStart+_vh+2){
+                    if(top>pageStart+2){brks.push(top);pageStart=top;}
                     else{pageStart+=_vh;brks.push(pageStart);}
                     if(brks.length>2000)return brks;
                   }
@@ -235,7 +246,7 @@ class ReaderActivity : AppCompatActivity() {
                 var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
                 if(anchor){
                   var el=document.getElementById(anchor);
-                  if(el){var elY=el.getBoundingClientRect().top;
+                  if(el){var elY=bodyTop(el);
                     for(var i=_breaks.length-1;i>=0;i--){if(_breaks[i]<=elY){start=i;break;}}}
                 }
                 lmGoPage(start);
