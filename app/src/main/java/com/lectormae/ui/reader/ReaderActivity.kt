@@ -192,6 +192,7 @@ class ReaderActivity : AppCompatActivity() {
               html, body {
                 margin:0 !important; padding:0 !important;
                 width:100% !important; background:#121212 !important;
+                height:auto !important; overflow:visible !important;
               }
               body {
                 color:#E0E0E0 !important; font-size:${size}px !important;
@@ -222,7 +223,7 @@ class ReaderActivity : AppCompatActivity() {
                 _breaks=[0];
                 var totalH=Math.max(document.body.scrollHeight,document.documentElement.scrollHeight);
                 if(totalH<=_h){_t=1;return;}
-                var lineBottoms=[];
+                var lines=[];
                 var rng=document.createRange();
                 var wEl=document.getElementById('_lm_w');
                 var walker=document.createTreeWalker(wEl,4,null,false);
@@ -233,29 +234,42 @@ class ReaderActivity : AppCompatActivity() {
                     rng.selectNodeContents(node);
                     var rs=rng.getClientRects();
                     for(var r=0;r<rs.length;r++){
+                      var t=Math.round(rs[r].top+window.scrollY);
                       var b=Math.round(rs[r].bottom+window.scrollY);
-                      if(b>0)lineBottoms.push(b);
+                      if(b>0)lines.push({t:t,b:b});
                     }
                   }catch(e){}
                 }
                 var media=wEl.querySelectorAll('img,figure');
-                for(var k=0;k<media.length;k++){var mb=lmAbsBottom(media[k]);if(mb>0)lineBottoms.push(mb);}
-                lineBottoms.sort(function(a,b){return a-b;});
+                for(var k=0;k<media.length;k++){
+                  var mt=lmAbsTop(media[k]),mb=lmAbsBottom(media[k]);
+                  if(mb>0)lines.push({t:mt,b:mb});
+                }
+                lines.sort(function(a,b){return a.b-b.b;});
                 var deduped=[];
-                for(var i=0;i<lineBottoms.length;i++){
-                  if(!deduped.length||lineBottoms[i]-deduped[deduped.length-1]>3)
-                    deduped.push(lineBottoms[i]);
+                for(var i=0;i<lines.length;i++){
+                  if(!deduped.length||lines[i].b-deduped[deduped.length-1].b>3)
+                    deduped.push(lines[i]);
                 }
                 var ps=0;
                 while(ps<totalH){
                   var pe=ps+_h;
                   if(pe>=totalH)break;
-                  var br=-1;
+                  var fi=-1;
                   for(var j=0;j<deduped.length;j++){
-                    if(deduped[j]>ps&&deduped[j]<=pe)br=deduped[j];
+                    if(deduped[j].b>ps&&deduped[j].b<=pe)fi=j;
                   }
-                  _breaks.push(br>ps?br:Math.round(pe));
-                  ps=_breaks[_breaks.length-1];
+                  var next;
+                  if(fi>=0&&fi+1<deduped.length){
+                    next=deduped[fi+1].t;
+                  }else if(fi>=0){
+                    next=deduped[fi].b;
+                  }else{
+                    next=Math.round(pe);
+                  }
+                  if(next<=ps)next=Math.round(pe);
+                  _breaks.push(next);
+                  ps=next;
                 }
                 _t=_breaks.length;
               }
