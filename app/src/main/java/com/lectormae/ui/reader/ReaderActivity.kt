@@ -204,51 +204,78 @@ class ReaderActivity : AppCompatActivity() {
               h1,h2,h3 { color:#FFFFFF !important; }
             </style>""".trimIndent()
 
-        // Pagination via vertical scroll: webView.scrollTo(0, page*_h) from Kotlin.
-        // _h is aligned to line-height so pages never cut a text line in half.
-        // No CSS columns — eliminates all horizontal coordinate drift.
+        // Pages break at paragraph boundaries so no sentence is ever cut mid-screen.
+        // _breaks[] stores the exact scrollY for each page start.
+        // Kotlin scrolls to _breaks[page] via webView.scrollTo(0, scrollY).
         val script = """
             <script id="_lm_js">
-              var _p=0,_t=1,_h=0;
+              var _p=0,_t=1,_h=0,_breaks=[0];
               function lmWrap(){
                 var w=document.createElement('div'); w.id='_lm_w';
                 while(document.body.firstChild) w.appendChild(document.body.firstChild);
                 document.body.appendChild(w);
-              }
-              function lmMeasure(){
-                _h = window.innerHeight;
-                var contentH = document.getElementById('_lm_w').offsetHeight || _h;
-                _t = Math.max(1, Math.ceil(contentH/_h));
               }
               function lmAbsTop(el){
                 var t=0,c=el;
                 while(c&&c!==document.body){t+=c.offsetTop;c=c.offsetParent;}
                 return t;
               }
+              function lmAbsBottom(el){
+                return lmAbsTop(el)+el.offsetHeight;
+              }
+              function lmComputeBreaks(){
+                _breaks=[0];
+                var wEl=document.getElementById('_lm_w');
+                var contentH=wEl.offsetHeight||_h;
+                if(contentH<=_h){_t=1;return;}
+                var blocks=wEl.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,figure,img');
+                var bottoms=[];
+                for(var i=0;i<blocks.length;i++) bottoms.push(lmAbsBottom(blocks[i]));
+                bottoms=bottoms.filter(function(v){return v>0;});
+                bottoms.sort(function(a,b){return a-b;});
+                var ps=0;
+                while(ps<contentH){
+                  var pe=ps+_h;
+                  if(pe>=contentH)break;
+                  var br=-1;
+                  for(var j=0;j<bottoms.length;j++){
+                    if(bottoms[j]>ps&&bottoms[j]<=pe) br=bottoms[j];
+                  }
+                  var next=br>ps?Math.round(br):Math.round(pe);
+                  _breaks.push(next);
+                  ps=next;
+                }
+                _t=_breaks.length;
+              }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                Android.onPageInfo(_p,_t,Math.round(_h));
+                Android.onPageInfo(_p,_t,_breaks[_p]);
+              }
+              function lmPageOf(absY){
+                for(var i=_breaks.length-1;i>=0;i--) if(absY>=_breaks[i]) return i;
+                return 0;
               }
               function lmInit(){
                 lmWrap();
                 setTimeout(function(){
-                  lmMeasure();
-                  var anchor=$anchorJs, ip=$initialPage;
+                  _h=window.innerHeight;
+                  lmComputeBreaks();
+                  var anchor=$anchorJs,ip=$initialPage;
                   var start=ip<0?_t-1:ip;
                   if(anchor){
                     var el=document.getElementById(anchor);
-                    if(el) start=Math.floor(lmAbsTop(el)/_h);
+                    if(el) start=lmPageOf(lmAbsTop(el));
                   }
                   lmGoPage(start);
-                }, 300);
+                },300);
               }
-              function lmNext(){ if(_p<_t-1) lmGoPage(_p+1); else Android.onNextChapter(); }
-              function lmPrev(){ if(_p>0) lmGoPage(_p-1); else Android.onPrevChapter(); }
+              function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
+              function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
-                var el=document.getElementById(id); if(!el) return;
-                lmGoPage(Math.floor(lmAbsTop(el)/_h));
+                var el=document.getElementById(id);if(!el)return;
+                lmGoPage(lmPageOf(lmAbsTop(el)));
               }
-              window.addEventListener('load', function(){ setTimeout(lmInit,100); });
+              window.addEventListener('load',function(){setTimeout(lmInit,100);});
             </script>""".trimIndent()
 
         // Strip any existing viewport meta from the EPUB so our injected one takes effect
@@ -266,9 +293,9 @@ class ReaderActivity : AppCompatActivity() {
 
     inner class JsBridge {
         @JavascriptInterface
-        fun onPageInfo(page: Int, total: Int, pageHeight: Int) = runOnUiThread {
+        fun onPageInfo(page: Int, total: Int, scrollY: Int) = runOnUiThread {
             currentPage = page
-            b.webView.scrollTo(0, page * pageHeight)
+            b.webView.scrollTo(0, scrollY)
             savePosition()
             b.tvChapterCount.text = "Cap ${currentChapter+1}/${chapters.size}  ·  Pág ${page+1}/$total"
             b.btnPrev.isEnabled = page > 0 || currentChapter > 0
