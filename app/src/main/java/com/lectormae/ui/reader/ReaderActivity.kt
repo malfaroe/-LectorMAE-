@@ -171,67 +171,53 @@ class ReaderActivity : AppCompatActivity() {
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
-        // body siempre tiene ancho = viewport → column-width:_vw → solo 1 columna cabe.
-        // Solución: wrapper div con display:inline-block.
-        // inline-block se dimensiona a su contenido → puede ser n*_vw ancho.
-        // CSS columns en el wrapper crean n columnas reales de _vw ancho.
-        // window.scrollTo(k*_vw,0) mueve el viewport de html para mostrar columna k.
+        // Abandono CSS columns — ningún enfoque CSS columns funcionó en WebView del Poco M3.
+        // Enfoque definitivo: translateY en body + overflow:hidden en html.
+        // body.scrollHeight = altura total del contenido (layout normal vertical).
+        // Página k: translateY(-k * _vh) mueve el body hacia arriba k páginas.
+        // html { overflow:hidden; height:_vh } recorta para mostrar solo 1 página.
+        // CSS transform funciona en TODOS los WebView sin excepciones.
         val style = """
             <style>
               html,body{margin:0!important;padding:0!important;background:#121212!important;}
-              body{color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;}
-              #lmWrap{visibility:hidden!important;}
-              img{max-width:100%!important;height:auto!important;break-inside:avoid!important;}
+              body{visibility:hidden!important;color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;padding:0 16px!important;box-sizing:border-box!important;}
+              img{max-width:100%!important;height:auto!important;}
               a{color:#C8965A!important;}
-              h1,h2,h3{color:#FFFFFF!important;break-after:avoid!important;}
+              h1,h2,h3{color:#FFFFFF!important;}
               table{max-width:100%!important;}
             </style>""".trimIndent()
 
         val script = """
             <script>
             (function(){
-              var _p=0,_t=1,_vw=0,_wrap=null;
+              var _p=0,_t=1,_vh=0;
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                window.scrollTo(_p*_vw,0);
-                _wrap.style.setProperty('visibility','visible','important');
+                document.body.style.setProperty('transform','translateY(-'+(_p*_vh)+'px)','important');
+                document.body.style.setProperty('visibility','visible','important');
                 Android.onPageInfo(_p,_t);
               }
               function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
                 var el=document.getElementById(id);if(!el)return;
-                var x=el.getBoundingClientRect().left+window.scrollX;
-                lmGoPage(Math.max(0,Math.min(Math.round(x/_vw),_t-1)));
+                var nat=el.getBoundingClientRect().top+_p*_vh;
+                lmGoPage(Math.max(0,Math.min(Math.floor(nat/_vh),_t-1)));
               }
               function lmInit(ip,anchor){
-                _vw=Math.floor(window.innerWidth);
-                var vh=Math.floor(window.innerHeight);
-                _wrap=document.createElement('div');
-                _wrap.id='lmWrap';
-                while(document.body.firstChild)_wrap.appendChild(document.body.firstChild);
-                document.body.appendChild(_wrap);
-                _wrap.style.setProperty('display','inline-block','important');
-                _wrap.style.setProperty('vertical-align','top','important');
-                _wrap.style.setProperty('height',vh+'px','important');
-                _wrap.style.setProperty('column-width',_vw+'px','important');
-                _wrap.style.setProperty('column-gap','0','important');
-                _wrap.style.setProperty('column-fill','auto','important');
-                _wrap.style.setProperty('overflow-y','clip','important');
-                var lastW=0,tries=0;
-                function check(){
-                  var sw=document.documentElement.scrollWidth;
-                  if(sw>0&&(sw===lastW||tries>=20)){
-                    _t=Math.max(1,Math.round(sw/_vw));
-                    var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
-                    if(anchor){var el=document.getElementById(anchor);if(el){var x=el.getBoundingClientRect().left+window.scrollX;start=Math.max(0,Math.min(Math.round(x/_vw),_t-1));}}
-                    lmGoPage(start);
-                  }else{lastW=sw;tries++;setTimeout(check,100);}
+                _vh=Math.floor(window.innerHeight);
+                _t=Math.max(1,Math.ceil(document.body.scrollHeight/_vh));
+                document.documentElement.style.setProperty('overflow','hidden','important');
+                document.documentElement.style.setProperty('height',_vh+'px','important');
+                var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
+                if(anchor){
+                  var el=document.getElementById(anchor);
+                  if(el)start=Math.max(0,Math.min(Math.floor(el.getBoundingClientRect().top/_vh),_t-1));
                 }
-                setTimeout(check,150);
+                lmGoPage(start);
               }
               window.lmNext=lmNext;window.lmPrev=lmPrev;window.lmGoPage=lmGoPage;window.lmGoToAnchor=lmGoToAnchor;
-              window.addEventListener('load',function(){setTimeout(function(){lmInit($initialPage,$anchorJs);},50);});
+              window.addEventListener('load',function(){setTimeout(function(){lmInit($initialPage,$anchorJs);},100);});
             })();
             </script>""".trimIndent()
 
