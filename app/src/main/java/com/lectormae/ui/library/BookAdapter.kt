@@ -5,9 +5,11 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import coil.load
 import com.lectormae.R
 import com.lectormae.data.Book
 import com.lectormae.databinding.ItemBookBinding
+import java.io.File
 
 class BookAdapter(
     private val onClick: (Book) -> Unit,
@@ -18,19 +20,16 @@ class BookAdapter(
         fun bind(book: Book) {
             b.tvTitle.text  = book.title
             b.tvAuthor.text = book.author
-            b.tvFormat.text = book.format
 
-            val badgeColor = if (book.format == "EPUB")
-                b.root.context.getColor(R.color.epub_color)
-            else
-                b.root.context.getColor(R.color.pdf_color)
-            b.tvFormat.setBackgroundColor(badgeColor)
-
-            val coverColor = if (book.format == "EPUB")
-                b.root.context.getColor(R.color.epub_cover)
-            else
-                b.root.context.getColor(R.color.pdf_cover)
-            b.coverArea.setBackgroundColor(coverColor)
+            if (!book.coverPath.isNullOrEmpty()) {
+                b.imgCover.load(File(book.coverPath)) {
+                    crossfade(true)
+                    placeholder(R.drawable.ic_book)
+                    error(R.drawable.ic_book)
+                }
+            } else {
+                b.imgCover.setImageResource(R.drawable.ic_book)
+            }
 
             b.root.setOnClickListener     { onClick(book) }
             b.root.setOnLongClickListener { onLongClick(book); true }

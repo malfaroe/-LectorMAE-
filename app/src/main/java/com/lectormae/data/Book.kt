@@ -12,6 +12,8 @@ data class Book(
     val format: String,                // "EPUB" | "PDF"
     val coverPath: String?,
     val fileSize: Long,
+    val lastChapter: Int = 0,
+    val lastPage: Int = 0,
     val lastOpened: Long = 0L,
     val addedDate: Long = System.currentTimeMillis()
 )

@@ -16,6 +16,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.lectormae.R
+import com.lectormae.data.AppDatabase
 import com.lectormae.databinding.ActivityReaderBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -53,8 +54,8 @@ class ReaderActivity : AppCompatActivity() {
 
         b.btnFontDec.setOnClickListener { changeFontSize(-2) }
         b.btnFontInc.setOnClickListener { changeFontSize(+2) }
-        b.btnPrev.setOnClickListener   { navigatePrev() }
-        b.btnNext.setOnClickListener   { navigateNext() }
+        b.btnPrev.setOnClickListener   { b.webView.evaluateJavascript("lmPrev()", null) }
+        b.btnNext.setOnClickListener   { b.webView.evaluateJavascript("lmNext()", null) }
 
         b.progressBar.visibility = View.VISIBLE
         lifecycleScope.launch {
@@ -74,80 +75,67 @@ class ReaderActivity : AppCompatActivity() {
         }
     }
 
-    // ── Toolbar menu ─────────────────────────────────────────────────────────
-
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.menu_reader, menu)
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
-        R.id.action_toc    -> { showToc(); true }
-        android.R.id.home  -> { finish(); true }
-        else               -> super.onOptionsItemSelected(item)
+        R.id.action_toc   -> { showToc(); true }
+        android.R.id.home -> { finish(); true }
+        else              -> super.onOptionsItemSelected(item)
     }
 
-    // ── Position persistence ─────────────────────────────────────────────────
+    private fun saveProgress() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            AppDatabase.get(this@ReaderActivity).bookDao()
+                .updateProgress(bookId, currentChapter, currentPage, System.currentTimeMillis())
+        }
+    }
 
-    private fun savePosition() =
-        prefs.edit().putString("pos_$bookId", "$currentChapter:$currentPage").apply()
+    private suspend fun loadPosition(): Pair<Int, Int> = withContext(Dispatchers.IO) {
+        val book = AppDatabase.get(this@ReaderActivity).bookDao().getById(bookId)
+        val ch   = (book?.lastChapter ?: 0).coerceIn(0, maxOf(0, chapters.size - 1))
+        Pair(ch, book?.lastPage ?: 0)
+    }
 
-    private fun loadPosition(): Pair<Int, Int> = runCatching {
-        val s = prefs.getString("pos_$bookId", null) ?: return Pair(0, 0)
-        val p = s.split(":")
-        Pair(p[0].toInt().coerceIn(0, chapters.size - 1), p[1].toInt())
-    }.getOrDefault(Pair(0, 0))
-
-    // ── WebView setup ────────────────────────────────────────────────────────
-
-    @Suppress("SetJavaScriptEnabled", "DEPRECATION")
+    @Suppress("SetJavaScriptEnabled")
     private fun setupWebView() {
         b.webView.settings.apply {
-            javaScriptEnabled                = true
-            builtInZoomControls              = false
+            javaScriptEnabled   = true
+            builtInZoomControls = false
             setSupportZoom(false)
-            allowFileAccess                  = true
-            allowFileAccessFromFileURLs      = true
-            allowUniversalAccessFromFileURLs = true
-            textZoom                         = 100  // ignore system font-size scaling
+            allowFileAccess     = true
+            textZoom            = 100
         }
-        b.webView.overScrollMode = View.OVER_SCROLL_NEVER
+        b.webView.overScrollMode               = View.OVER_SCROLL_NEVER
         b.webView.isHorizontalScrollBarEnabled = false
         b.webView.isVerticalScrollBarEnabled   = false
         b.webView.setBackgroundColor(0xFF121212.toInt())
         b.webView.addJavascriptInterface(JsBridge(), "Android")
         b.webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
-            override fun onPageFinished(view: WebView, url: String) { }
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
         }
     }
 
     private fun setupTapNavigation() {
-        val gesture = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+        val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 val w = b.webView.width
                 when {
-                    e.x < w * 0.35f -> navigatePrev()
-                    e.x > w * 0.65f -> navigateNext()
+                    e.x < w * 0.35f -> b.webView.evaluateJavascript("lmPrev()", null)
+                    e.x > w * 0.65f -> b.webView.evaluateJavascript("lmNext()", null)
                 }
                 return true
             }
         })
-        // Consume all touch events to block native WebView scroll
-        b.webView.setOnTouchListener { _, event -> gesture.onTouchEvent(event); true }
+        b.webView.setOnTouchListener { _, event -> detector.onTouchEvent(event); true }
     }
 
-    private fun navigateNext() = b.webView.evaluateJavascript("lmNext()", null)
-    private fun navigatePrev() = b.webView.evaluateJavascript("lmPrev()", null)
-
-    // ── Chapter loading ──────────────────────────────────────────────────────
-
-    /** initialPage: 0=first, -1=last, N=exact; anchor: optional fragment id */
     private fun loadChapter(index: Int, initialPage: Int = 0, anchor: String? = null) {
         if (index !in chapters.indices) return
         currentChapter = index
         currentPage    = 0
-        b.webView.scrollTo(0, 0)
         val file = chapters[index].file
         b.webView.loadDataWithBaseURL(
             "file://${file.parent}/",
@@ -161,8 +149,6 @@ class ReaderActivity : AppCompatActivity() {
         prefs.edit().putInt("font_size", fontSize).apply()
         loadChapter(currentChapter, initialPage = currentPage)
     }
-
-    // ── TOC ──────────────────────────────────────────────────────────────────
 
     private fun showToc() {
         val toc = parsedEpub?.toc?.takeIf { it.isNotEmpty() } ?: run {
@@ -182,144 +168,59 @@ class ReaderActivity : AppCompatActivity() {
             .show()
     }
 
-    // ── HTML / CSS / JS injection ────────────────────────────────────────────
-
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
         val style = """
-            <style id="_lm">
-              html, body {
-                margin:0 !important; padding:0 !important;
-                width:100% !important; background:#121212 !important;
-                height:auto !important; overflow:visible !important;
-              }
-              body {
-                color:#E0E0E0 !important; font-size:${size}px !important;
-                font-family:Georgia,serif !important; line-height:1.75 !important;
-                padding:0 16px !important; box-sizing:border-box !important;
-              }
-              a        { color:#C8965A !important; }
-              img      { max-width:100% !important; height:auto !important; }
-              table    { max-width:100% !important; word-break:break-word !important; }
-              h1,h2,h3 { color:#FFFFFF !important; }
+            <style>
+              html,body{margin:0!important;padding:0!important;background:#121212!important;}
+              body{color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;padding:0 16px!important;box-sizing:border-box!important;}
+              img{max-width:100%!important;height:auto!important;}
+              a{color:#C8965A!important;}
+              h1,h2,h3{color:#FFFFFF!important;}
+              table{max-width:100%!important;}
             </style>""".trimIndent()
 
         val script = """
-            <script id="_lm_js">
-              var _p=0,_t=1,_h=0,_breaks=[0];
-              function lmWrap(){
-                var w=document.createElement('div');w.id='_lm_w';
-                while(document.body.firstChild)w.appendChild(document.body.firstChild);
-                document.body.appendChild(w);
-              }
-              function lmAbsTop(el){
-                var t=0,c=el;
-                while(c&&c!==document.body){t+=c.offsetTop;c=c.offsetParent;}
-                return t;
-              }
-              function lmAbsBottom(el){return lmAbsTop(el)+el.offsetHeight;}
-              function lmComputeBreaks(){
-                _breaks=[0];
-                var totalH=Math.max(document.body.scrollHeight,document.documentElement.scrollHeight);
-                if(totalH<=_h){_t=1;return;}
-                var lines=[];
-                var rng=document.createRange();
-                var wEl=document.getElementById('_lm_w');
-                var walker=document.createTreeWalker(wEl,4,null,false);
-                var node;
-                while(node=walker.nextNode()){
-                  if(!node.textContent.trim())continue;
-                  try{
-                    rng.selectNodeContents(node);
-                    var rs=rng.getClientRects();
-                    for(var r=0;r<rs.length;r++){
-                      var t=Math.round(rs[r].top+window.scrollY);
-                      var b=Math.round(rs[r].bottom+window.scrollY);
-                      if(b>0)lines.push({t:t,b:b});
-                    }
-                  }catch(e){}
-                }
-                var media=wEl.querySelectorAll('img,figure');
-                for(var k=0;k<media.length;k++){
-                  var mt=lmAbsTop(media[k]),mb=lmAbsBottom(media[k]);
-                  if(mb>0)lines.push({t:mt,b:mb});
-                }
-                lines.sort(function(a,b){return a.b-b.b;});
-                var deduped=[];
-                for(var i=0;i<lines.length;i++){
-                  if(!deduped.length||lines[i].b-deduped[deduped.length-1].b>3)
-                    deduped.push(lines[i]);
-                }
-                var ps=0;
-                while(ps<totalH){
-                  var pe=ps+_h;
-                  if(pe>=totalH)break;
-                  var fi=-1;
-                  for(var j=0;j<deduped.length;j++){
-                    if(deduped[j].b>ps&&deduped[j].b<=pe)fi=j;
-                  }
-                  var next;
-                  if(fi>=0&&fi+1<deduped.length){
-                    next=deduped[fi+1].t;
-                  }else if(fi>=0){
-                    next=deduped[fi].b;
-                  }else{
-                    next=Math.round(pe);
-                  }
-                  if(next<=ps)next=Math.round(pe);
-                  _breaks.push(next);
-                  ps=next;
-                }
-                _t=_breaks.length;
-              }
+            <script>
+            (function(){
+              var _p=0,_t=1,_vw=0;
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                var coverH=0;
-                if(_p<_t-1){
-                  var pageContent=_breaks[_p+1]-_breaks[_p];
-                  coverH=Math.max(0,_h-pageContent);
-                }
-                var cv=document.getElementById('_lm_cv');
-                if(!cv){
-                  cv=document.createElement('div');
-                  cv.id='_lm_cv';
-                  cv.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#121212;pointer-events:none;z-index:9999;';
-                  document.body.appendChild(cv);
-                }
-                cv.style.height=coverH+'px';
-                Android.onPageInfo(_p,_t,_breaks[_p]);
-              }
-              function lmPageOf(absY){
-                for(var i=_breaks.length-1;i>=0;i--)if(absY>=_breaks[i])return i;
-                return 0;
-              }
-              function lmInit(){
-                lmWrap();
-                var anchor=$anchorJs,ip=$initialPage;
-                var lastH=0,tries=0;
-                function checkStable(){
-                  var h=document.body.scrollHeight;
-                  if(h>0&&(h===lastH||tries>=8)){
-                    _h=window.innerHeight;
-                    lmComputeBreaks();
-                    var start=ip<0?_t-1:Math.max(0,Math.min(ip,_t-1));
-                    if(anchor){var el=document.getElementById(anchor);if(el)start=lmPageOf(lmAbsTop(el));}
-                    lmGoPage(start);
-                  }else{lastH=h;tries++;setTimeout(checkStable,100);}
-                }
-                setTimeout(checkStable,150);
+                window.scrollTo(_p*_vw,0);
+                Android.onPageInfo(_p,_t);
               }
               function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
                 var el=document.getElementById(id);if(!el)return;
-                lmGoPage(lmPageOf(lmAbsTop(el)));
+                var x=el.getBoundingClientRect().left+window.pageXOffset;
+                lmGoPage(Math.max(0,Math.min(Math.floor(x/_vw),_t-1)));
               }
-              window.addEventListener('load',function(){setTimeout(lmInit,50);});
+              function lmInit(ip,anchor){
+                _vw=window.innerWidth;
+                var vh=window.innerHeight;
+                document.body.style.height=vh+'px';
+                document.body.style.columnWidth=_vw+'px';
+                document.body.style.columnGap='0px';
+                document.body.style.columnFill='auto';
+                var lastW=0,tries=0;
+                function check(){
+                  var w=document.body.scrollWidth;
+                  if(w>0&&(w===lastW||tries>=10)){
+                    _t=Math.max(1,Math.ceil(w/_vw));
+                    var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
+                    if(anchor){var el=document.getElementById(anchor);if(el){var x=el.getBoundingClientRect().left+window.pageXOffset;start=Math.max(0,Math.min(Math.floor(x/_vw),_t-1));}}
+                    lmGoPage(start);
+                  }else{lastW=w;tries++;setTimeout(check,100);}
+                }
+                setTimeout(check,100);
+              }
+              window.lmNext=lmNext;window.lmPrev=lmPrev;window.lmGoPage=lmGoPage;window.lmGoToAnchor=lmGoToAnchor;
+              window.addEventListener('load',function(){setTimeout(function(){lmInit($initialPage,$anchorJs);},50);});
+            })();
             </script>""".trimIndent()
 
-        // Strip any existing viewport meta from the EPUB so our injected one takes effect
         val strippedHtml = original.replace(
             Regex("<meta[^>]+name=[\"']viewport[\"'][^>]*/?>", RegexOption.IGNORE_CASE), ""
         )
@@ -330,14 +231,11 @@ class ReaderActivity : AppCompatActivity() {
         else "$inject$strippedHtml"
     }
 
-    // ── JS bridge ────────────────────────────────────────────────────────────
-
     inner class JsBridge {
         @JavascriptInterface
-        fun onPageInfo(page: Int, total: Int, scrollY: Int) = runOnUiThread {
+        fun onPageInfo(page: Int, total: Int) = runOnUiThread {
             currentPage = page
-            b.webView.post { b.webView.scrollTo(0, scrollY) }
-            savePosition()
+            saveProgress()
             b.tvChapterCount.text = "Cap ${currentChapter+1}/${chapters.size}  ·  Pág ${page+1}/$total"
             b.btnPrev.isEnabled = page > 0 || currentChapter > 0
             b.btnNext.isEnabled = page < total-1 || currentChapter < chapters.size-1

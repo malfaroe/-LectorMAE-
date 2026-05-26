@@ -1,25 +1,17 @@
 package com.lectormae.ui.library
 
-import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.lectormae.databinding.FragmentLibraryBinding
 import com.lectormae.ui.reader.ReaderActivity
-import java.io.File
 
 class LibraryFragment : Fragment() {
 
@@ -30,18 +22,11 @@ class LibraryFragment : Fragment() {
 
     private val adapter = BookAdapter(
         onClick = { book ->
-            when (book.format) {
-                "EPUB" -> {
-                    val intent = Intent(requireContext(), ReaderActivity::class.java).apply {
-                        putExtra(ReaderActivity.EXTRA_FILE_PATH, book.filePath)
-                        putExtra(ReaderActivity.EXTRA_TITLE, book.title)
-                        putExtra(ReaderActivity.EXTRA_BOOK_ID, book.id)
-                    }
-                    startActivity(intent)
-                }
-                "PDF" -> openPdfExternal(book.filePath)
-                else  -> Toast.makeText(requireContext(), "Formato no soportado", Toast.LENGTH_SHORT).show()
-            }
+            startActivity(Intent(requireContext(), ReaderActivity::class.java).apply {
+                putExtra(ReaderActivity.EXTRA_FILE_PATH, book.filePath)
+                putExtra(ReaderActivity.EXTRA_TITLE, book.title)
+                putExtra(ReaderActivity.EXTRA_BOOK_ID, book.id)
+            })
         },
         onLongClick = { book ->
             MaterialAlertDialogBuilder(requireContext())
@@ -55,13 +40,6 @@ class LibraryFragment : Fragment() {
 
     private val pickFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.importFromUri(it) }
-    }
-
-    private val requestPermission = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) vm.scanStorage()
-        else Toast.makeText(requireContext(), "Se necesita permiso para escanear libros.", Toast.LENGTH_LONG).show()
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -80,40 +58,12 @@ class LibraryFragment : Fragment() {
             b.emptyState.visibility = if (books.isEmpty()) View.VISIBLE else View.GONE
         }
 
-        vm.scanning.observe(viewLifecycleOwner) { scanning ->
-            b.progressBar.visibility = if (scanning) View.VISIBLE else View.GONE
+        vm.importing.observe(viewLifecycleOwner) { importing ->
+            b.progressBar.visibility = if (importing) View.VISIBLE else View.GONE
         }
 
         b.fab.setOnClickListener {
-            pickFile.launch(arrayOf("application/epub+zip", "application/pdf"))
-        }
-
-        checkAndScan()
-    }
-
-    private fun openPdfExternal(filePath: String) {
-        val uri: Uri = if (filePath.startsWith("content://")) {
-            Uri.parse(filePath)
-        } else {
-            FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.provider", File(filePath))
-        }
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/pdf")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try {
-            startActivity(intent)
-        } catch (e: ActivityNotFoundException) {
-            Toast.makeText(requireContext(), "No hay visor de PDF instalado", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun checkAndScan() {
-        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.READ_EXTERNAL_STORAGE)
-            == PackageManager.PERMISSION_GRANTED) {
-            vm.scanStorage()
-        } else {
-            requestPermission.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            pickFile.launch(arrayOf("application/epub+zip"))
         }
     }
 

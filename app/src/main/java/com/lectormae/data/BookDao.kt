@@ -20,4 +20,10 @@ interface BookDao {
 
     @Query("UPDATE books SET lastOpened = :time WHERE id = :id")
     suspend fun updateLastOpened(id: String, time: Long)
+
+    @Query("UPDATE books SET lastChapter=:ch, lastPage=:pg, lastOpened=:t WHERE id=:id")
+    suspend fun updateProgress(id: String, ch: Int, pg: Int, t: Long)
+
+    @Query("SELECT * FROM books WHERE id=:id")
+    suspend fun getById(id: String): Book?
 }

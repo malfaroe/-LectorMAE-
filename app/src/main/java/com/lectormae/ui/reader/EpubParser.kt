@@ -16,7 +16,8 @@ object EpubParser {
         val title: String,
         val author: String,
         val chapters: List<Chapter>,
-        val toc: List<TocItem>
+        val toc: List<TocItem>,
+        val coverFile: File?
     )
 
     fun parse(context: Context, filePath: String, cacheDir: File): ParsedEpub? {
@@ -108,7 +109,19 @@ object EpubParser {
             ?: tocFromHeadings(chapters).takeIf { it.isNotEmpty() }
             ?: defaultToc(chapters)
 
-        ParsedEpub(title, author, chapters, toc)
+        // Cover: meta name="cover" → id en manifest, o properties="cover-image"
+        val coverMetaId = run {
+            val metas = doc.getElementsByTagName("meta")
+            (0 until metas.length).mapNotNull { metas.item(it) }
+                .find { it.attributes?.getNamedItem("name")?.nodeValue == "cover" }
+                ?.attributes?.getNamedItem("content")?.nodeValue
+        }
+        val coverItem = coverMetaId?.let { manifest[it] }
+            ?: manifest.values.find { "cover-image" in it.props }
+            ?: manifest.values.find { it.media.startsWith("image/") && "cover" in it.href.lowercase() }
+        val coverFile = coverItem?.let { File(opfDir, it.href) }?.takeIf { it.exists() }
+
+        ParsedEpub(title, author, chapters, toc, coverFile)
     }.getOrNull()
 
     private fun defaultToc(chapters: List<Chapter>) =
