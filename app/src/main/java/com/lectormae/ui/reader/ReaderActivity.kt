@@ -171,14 +171,16 @@ class ReaderActivity : AppCompatActivity() {
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
-        // overflow-y:clip en body NO crea scroll container (a diferencia de overflow-y:hidden)
-        // → overflow-x del body permanece visible → html queda como scroll container
-        // → window.scrollTo(_p*_vw,0) mueve el viewport de html → muestra columna correcta
-        // → documentElement.scrollWidth = ancho total (n*_vw) porque html es el scroll container
+        // body siempre tiene ancho = viewport → column-width:_vw → solo 1 columna cabe.
+        // Solución: wrapper div con display:inline-block.
+        // inline-block se dimensiona a su contenido → puede ser n*_vw ancho.
+        // CSS columns en el wrapper crean n columnas reales de _vw ancho.
+        // window.scrollTo(k*_vw,0) mueve el viewport de html para mostrar columna k.
         val style = """
             <style>
               html,body{margin:0!important;padding:0!important;background:#121212!important;}
-              body{visibility:hidden!important;color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;}
+              body{color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;}
+              #lmWrap{visibility:hidden!important;}
               img{max-width:100%!important;height:auto!important;break-inside:avoid!important;}
               a{color:#C8965A!important;}
               h1,h2,h3{color:#FFFFFF!important;break-after:avoid!important;}
@@ -188,11 +190,11 @@ class ReaderActivity : AppCompatActivity() {
         val script = """
             <script>
             (function(){
-              var _p=0,_t=1,_vw=0;
+              var _p=0,_t=1,_vw=0,_wrap=null;
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
                 window.scrollTo(_p*_vw,0);
-                document.body.style.setProperty('visibility','visible','important');
+                _wrap.style.setProperty('visibility','visible','important');
                 Android.onPageInfo(_p,_t);
               }
               function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
@@ -205,12 +207,17 @@ class ReaderActivity : AppCompatActivity() {
               function lmInit(ip,anchor){
                 _vw=Math.floor(window.innerWidth);
                 var vh=Math.floor(window.innerHeight);
-                var b=document.body;
-                b.style.setProperty('height',vh+'px','important');
-                b.style.setProperty('column-width',_vw+'px','important');
-                b.style.setProperty('column-gap','0','important');
-                b.style.setProperty('column-fill','auto','important');
-                b.style.setProperty('overflow-y','clip','important');
+                _wrap=document.createElement('div');
+                _wrap.id='lmWrap';
+                while(document.body.firstChild)_wrap.appendChild(document.body.firstChild);
+                document.body.appendChild(_wrap);
+                _wrap.style.setProperty('display','inline-block','important');
+                _wrap.style.setProperty('vertical-align','top','important');
+                _wrap.style.setProperty('height',vh+'px','important');
+                _wrap.style.setProperty('column-width',_vw+'px','important');
+                _wrap.style.setProperty('column-gap','0','important');
+                _wrap.style.setProperty('column-fill','auto','important');
+                _wrap.style.setProperty('overflow-y','clip','important');
                 var lastW=0,tries=0;
                 function check(){
                   var sw=document.documentElement.scrollWidth;
