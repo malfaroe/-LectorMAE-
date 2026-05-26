@@ -228,18 +228,27 @@ class ReaderActivity : AppCompatActivity() {
                 var wEl=document.getElementById('_lm_w');
                 var contentH=wEl.offsetHeight||_h;
                 if(contentH<=_h){_t=1;return;}
-                var blocks=wEl.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,figure,img');
-                var bottoms=[];
-                for(var i=0;i<blocks.length;i++) bottoms.push(lmAbsBottom(blocks[i]));
-                bottoms=bottoms.filter(function(v){return v>0;});
-                bottoms.sort(function(a,b){return a-b;});
+                var lineBottoms=[];
+                var rng=document.createRange();
+                var blocks=wEl.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre');
+                for(var i=0;i<blocks.length;i++){
+                  try{
+                    rng.selectNodeContents(blocks[i]);
+                    var rs=rng.getClientRects();
+                    for(var r=0;r<rs.length;r++){var b=Math.round(rs[r].bottom);if(b>0)lineBottoms.push(b);}
+                  }catch(e){var fb=lmAbsBottom(blocks[i]);if(fb>0)lineBottoms.push(fb);}
+                }
+                var media=wEl.querySelectorAll('figure,img');
+                for(var k=0;k<media.length;k++){var mb=lmAbsBottom(media[k]);if(mb>0)lineBottoms.push(mb);}
+                lineBottoms.sort(function(a,b){return a-b;});
+                lineBottoms=lineBottoms.filter(function(v,i,a){return i===0||v-a[i-1]>2;});
                 var ps=0;
                 while(ps<contentH){
                   var pe=ps+_h;
                   if(pe>=contentH)break;
                   var br=-1;
-                  for(var j=0;j<bottoms.length;j++){
-                    if(bottoms[j]>ps&&bottoms[j]<=pe) br=bottoms[j];
+                  for(var j=0;j<lineBottoms.length;j++){
+                    if(lineBottoms[j]>ps&&lineBottoms[j]<=pe) br=lineBottoms[j];
                   }
                   var next=br>ps?Math.round(br):Math.round(pe);
                   _breaks.push(next);
