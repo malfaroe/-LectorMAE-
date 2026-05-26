@@ -171,51 +171,56 @@ class ReaderActivity : AppCompatActivity() {
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
-        // html overflow:hidden = viewport clip (allows programmatic scrollLeft via Chrome quirk)
-        // body overflow NOT hidden = body expands to n*_vw so body.scrollWidth is accurate
+        // Sin overflow:hidden en html → window.scrollTo funciona (fiable en Android WebView)
+        // body width:max-content → se expande a n*_vw con CSS columns
+        // body oculto hasta que lmGoPage lo muestra (evita flash de contenido sin paginar)
         val style = """
             <style>
-              html{margin:0!important;padding:0!important;background:#121212!important;overflow:hidden!important;}
-              body{margin:0!important;padding:0 16px 2em!important;background:#121212!important;color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;box-sizing:border-box!important;}
+              html,body{margin:0!important;padding:0!important;background:#121212!important;}
+              body{visibility:hidden!important;color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;}
               img{max-width:100%!important;height:auto!important;break-inside:avoid!important;}
               a{color:#C8965A!important;}
               h1,h2,h3{color:#FFFFFF!important;break-after:avoid!important;}
               table{max-width:100%!important;}
             </style>""".trimIndent()
 
-        // Chrome/WebView quirk: documentElement.scrollLeft is writable even with html{overflow:hidden}.
-        // body.scrollWidth gives true column width (not clipped by html overflow).
+        // window.scrollTo(x,0) funciona en WebView sin overflow:hidden en html.
+        // body.style.setProperty(...,'important') sobreescribe CSS del EPUB.
+        // width:max-content permite que el body se expanda al ancho total de los columns.
         val script = """
             <script>
             (function(){
               var _p=0,_t=1,_vw=0;
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                document.documentElement.scrollLeft=_p*_vw;
+                window.scrollTo(_p*_vw,0);
+                document.body.style.setProperty('visibility','visible','important');
                 Android.onPageInfo(_p,_t);
               }
               function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
                 var el=document.getElementById(id);if(!el)return;
-                var x=el.getBoundingClientRect().left+document.documentElement.scrollLeft;
+                var x=el.getBoundingClientRect().left+window.scrollX;
                 lmGoPage(Math.max(0,Math.min(Math.round(x/_vw),_t-1)));
               }
               function lmInit(ip,anchor){
                 _vw=Math.floor(window.innerWidth);
                 var vh=Math.floor(window.innerHeight);
-                document.body.style.height=vh+'px';
-                document.body.style.columnWidth=_vw+'px';
-                document.body.style.columnGap='0';
-                document.body.style.columnFill='auto';
-                document.body.style.overflowY='hidden';
+                var b=document.body;
+                b.style.setProperty('height',vh+'px','important');
+                b.style.setProperty('column-width',_vw+'px','important');
+                b.style.setProperty('column-gap','0','important');
+                b.style.setProperty('column-fill','auto','important');
+                b.style.setProperty('overflow-y','hidden','important');
+                b.style.setProperty('width','max-content','important');
                 var lastW=0,tries=0;
                 function check(){
                   var sw=document.body.scrollWidth;
                   if(sw>0&&(sw===lastW||tries>=20)){
                     _t=Math.max(1,Math.round(sw/_vw));
                     var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
-                    if(anchor){var el=document.getElementById(anchor);if(el){var x=el.getBoundingClientRect().left;start=Math.max(0,Math.min(Math.round(x/_vw),_t-1));}}
+                    if(anchor){var el=document.getElementById(anchor);if(el){var x=el.getBoundingClientRect().left+window.scrollX;start=Math.max(0,Math.min(Math.round(x/_vw),_t-1));}}
                     lmGoPage(start);
                   }else{lastW=sw;tries++;setTimeout(check,100);}
                 }
