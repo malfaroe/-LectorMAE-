@@ -188,10 +188,14 @@ class ReaderActivity : AppCompatActivity() {
         val script = """
             <script>
             (function(){
-              var _p=0,_t=1,_vh=0;
+              var _p=0,_t=1,_vh=0,_breaks=[],_totalH=0;
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
-                document.body.style.setProperty('transform','translateY(-'+(_p*_vh)+'px)','important');
+                var y=_breaks[_p]||0;
+                var nextY=(_p+1<_t)?_breaks[_p+1]:_totalH;
+                var clipBottom=Math.max(0,_totalH-nextY);
+                document.body.style.setProperty('transform','translateY(-'+y+'px)','important');
+                document.body.style.setProperty('clip-path','inset(0 0 '+clipBottom+'px 0)','important');
                 document.body.style.setProperty('visibility','visible','important');
                 Android.onPageInfo(_p,_t);
               }
@@ -199,18 +203,40 @@ class ReaderActivity : AppCompatActivity() {
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
               function lmGoToAnchor(id){
                 var el=document.getElementById(id);if(!el)return;
-                var nat=el.getBoundingClientRect().top+_p*_vh;
-                lmGoPage(Math.max(0,Math.min(Math.floor(nat/_vh),_t-1)));
+                var nat=el.getBoundingClientRect().top+(_breaks[_p]||0);
+                for(var i=_breaks.length-1;i>=0;i--){if(_breaks[i]<=nat){lmGoPage(i);return;}}
+                lmGoPage(0);
               }
-              function lmInit(totalH,ip,anchor){
+              function buildBreaks(){
+                var brks=[0],pageStart=0;
+                var els=document.body.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre');
+                for(var i=0;i<els.length;i++){
+                  var el=els[i];if(!el.offsetHeight)continue;
+                  var top=el.getBoundingClientRect().top;
+                  var bottom=top+el.offsetHeight;
+                  while(bottom>pageStart+_vh+4){
+                    if(top>pageStart+4){brks.push(top);pageStart=top;}
+                    else{pageStart+=_vh;brks.push(pageStart);}
+                    if(brks.length>2000)return brks;
+                  }
+                }
+                return brks;
+              }
+              function lmStart(totalH,ip,anchor){
                 _vh=Math.floor(window.innerHeight);
-                _t=Math.max(1,Math.ceil(totalH/_vh));
+                _totalH=totalH;
+                _breaks=buildBreaks();
+                if(_breaks.length<2&&totalH>_vh){
+                  _breaks=[];for(var i=0;i*_vh<totalH;i++)_breaks.push(i*_vh);
+                }
+                _t=Math.max(1,_breaks.length);
                 document.documentElement.style.setProperty('overflow','hidden','important');
                 document.documentElement.style.setProperty('height',_vh+'px','important');
                 var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
                 if(anchor){
                   var el=document.getElementById(anchor);
-                  if(el)start=Math.max(0,Math.min(Math.floor(el.getBoundingClientRect().top/_vh),_t-1));
+                  if(el){var elY=el.getBoundingClientRect().top;
+                    for(var i=_breaks.length-1;i>=0;i--){if(_breaks[i]<=elY){start=i;break;}}}
                 }
                 lmGoPage(start);
               }
@@ -219,7 +245,7 @@ class ReaderActivity : AppCompatActivity() {
                 var lastH=0,tries=0;
                 function measure(){
                   var h=document.body.scrollHeight;
-                  if(h>0&&(h===lastH||tries>=15)){lmInit(h,$initialPage,$anchorJs);}
+                  if(h>0&&(h===lastH||tries>=15)){lmStart(h,$initialPage,$anchorJs);}
                   else{lastH=h;tries++;setTimeout(measure,100);}
                 }
                 setTimeout(measure,100);
