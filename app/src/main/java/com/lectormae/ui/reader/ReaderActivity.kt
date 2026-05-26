@@ -275,6 +275,19 @@ class ReaderActivity : AppCompatActivity() {
               }
               function lmGoPage(n){
                 _p=Math.max(0,Math.min(n,_t-1));
+                var coverH=0;
+                if(_p<_t-1){
+                  var pageContent=_breaks[_p+1]-_breaks[_p];
+                  coverH=Math.max(0,_h-pageContent);
+                }
+                var cv=document.getElementById('_lm_cv');
+                if(!cv){
+                  cv=document.createElement('div');
+                  cv.id='_lm_cv';
+                  cv.style.cssText='position:fixed;bottom:0;left:0;right:0;background:#121212;pointer-events:none;z-index:9999;';
+                  document.body.appendChild(cv);
+                }
+                cv.style.height=coverH+'px';
                 Android.onPageInfo(_p,_t,_breaks[_p]);
               }
               function lmPageOf(absY){
