@@ -204,15 +204,12 @@ class ReaderActivity : AppCompatActivity() {
               h1,h2,h3 { color:#FFFFFF !important; }
             </style>""".trimIndent()
 
-        // Pages break at paragraph boundaries so no sentence is ever cut mid-screen.
-        // _breaks[] stores the exact scrollY for each page start.
-        // Kotlin scrolls to _breaks[page] via webView.scrollTo(0, scrollY).
         val script = """
             <script id="_lm_js">
               var _p=0,_t=1,_h=0,_breaks=[0];
               function lmWrap(){
-                var w=document.createElement('div'); w.id='_lm_w';
-                while(document.body.firstChild) w.appendChild(document.body.firstChild);
+                var w=document.createElement('div');w.id='_lm_w';
+                while(document.body.firstChild)w.appendChild(document.body.firstChild);
                 document.body.appendChild(w);
               }
               function lmAbsTop(el){
@@ -220,39 +217,45 @@ class ReaderActivity : AppCompatActivity() {
                 while(c&&c!==document.body){t+=c.offsetTop;c=c.offsetParent;}
                 return t;
               }
-              function lmAbsBottom(el){
-                return lmAbsTop(el)+el.offsetHeight;
-              }
+              function lmAbsBottom(el){return lmAbsTop(el)+el.offsetHeight;}
               function lmComputeBreaks(){
                 _breaks=[0];
-                var wEl=document.getElementById('_lm_w');
-                var contentH=wEl.offsetHeight||_h;
-                if(contentH<=_h){_t=1;return;}
+                var totalH=Math.max(document.body.scrollHeight,document.documentElement.scrollHeight);
+                if(totalH<=_h){_t=1;return;}
                 var lineBottoms=[];
                 var rng=document.createRange();
-                var blocks=wEl.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre');
-                for(var i=0;i<blocks.length;i++){
+                var wEl=document.getElementById('_lm_w');
+                var walker=document.createTreeWalker(wEl,4,null,false);
+                var node;
+                while(node=walker.nextNode()){
+                  if(!node.textContent.trim())continue;
                   try{
-                    rng.selectNodeContents(blocks[i]);
+                    rng.selectNodeContents(node);
                     var rs=rng.getClientRects();
-                    for(var r=0;r<rs.length;r++){var b=Math.round(rs[r].bottom);if(b>0)lineBottoms.push(b);}
-                  }catch(e){var fb=lmAbsBottom(blocks[i]);if(fb>0)lineBottoms.push(fb);}
+                    for(var r=0;r<rs.length;r++){
+                      var b=Math.round(rs[r].bottom+window.scrollY);
+                      if(b>0)lineBottoms.push(b);
+                    }
+                  }catch(e){}
                 }
-                var media=wEl.querySelectorAll('figure,img');
+                var media=wEl.querySelectorAll('img,figure');
                 for(var k=0;k<media.length;k++){var mb=lmAbsBottom(media[k]);if(mb>0)lineBottoms.push(mb);}
                 lineBottoms.sort(function(a,b){return a-b;});
-                lineBottoms=lineBottoms.filter(function(v,i,a){return i===0||v-a[i-1]>2;});
+                var deduped=[];
+                for(var i=0;i<lineBottoms.length;i++){
+                  if(!deduped.length||lineBottoms[i]-deduped[deduped.length-1]>3)
+                    deduped.push(lineBottoms[i]);
+                }
                 var ps=0;
-                while(ps<contentH){
+                while(ps<totalH){
                   var pe=ps+_h;
-                  if(pe>=contentH)break;
+                  if(pe>=totalH)break;
                   var br=-1;
-                  for(var j=0;j<lineBottoms.length;j++){
-                    if(lineBottoms[j]>ps&&lineBottoms[j]<=pe) br=lineBottoms[j];
+                  for(var j=0;j<deduped.length;j++){
+                    if(deduped[j]>ps&&deduped[j]<=pe)br=deduped[j];
                   }
-                  var next=br>ps?Math.round(br):Math.round(pe);
-                  _breaks.push(next);
-                  ps=next;
+                  _breaks.push(br>ps?br:Math.round(pe));
+                  ps=_breaks[_breaks.length-1];
                 }
                 _t=_breaks.length;
               }
@@ -261,22 +264,24 @@ class ReaderActivity : AppCompatActivity() {
                 Android.onPageInfo(_p,_t,_breaks[_p]);
               }
               function lmPageOf(absY){
-                for(var i=_breaks.length-1;i>=0;i--) if(absY>=_breaks[i]) return i;
+                for(var i=_breaks.length-1;i>=0;i--)if(absY>=_breaks[i])return i;
                 return 0;
               }
               function lmInit(){
                 lmWrap();
-                setTimeout(function(){
-                  _h=window.innerHeight;
-                  lmComputeBreaks();
-                  var anchor=$anchorJs,ip=$initialPage;
-                  var start=ip<0?_t-1:ip;
-                  if(anchor){
-                    var el=document.getElementById(anchor);
-                    if(el) start=lmPageOf(lmAbsTop(el));
-                  }
-                  lmGoPage(start);
-                },300);
+                var anchor=$anchorJs,ip=$initialPage;
+                var lastH=0,tries=0;
+                function checkStable(){
+                  var h=document.body.scrollHeight;
+                  if(h>0&&(h===lastH||tries>=8)){
+                    _h=window.innerHeight;
+                    lmComputeBreaks();
+                    var start=ip<0?_t-1:Math.max(0,Math.min(ip,_t-1));
+                    if(anchor){var el=document.getElementById(anchor);if(el)start=lmPageOf(lmAbsTop(el));}
+                    lmGoPage(start);
+                  }else{lastH=h;tries++;setTimeout(checkStable,100);}
+                }
+                setTimeout(checkStable,150);
               }
               function lmNext(){if(_p<_t-1)lmGoPage(_p+1);else Android.onNextChapter();}
               function lmPrev(){if(_p>0)lmGoPage(_p-1);else Android.onPrevChapter();}
@@ -284,7 +289,7 @@ class ReaderActivity : AppCompatActivity() {
                 var el=document.getElementById(id);if(!el)return;
                 lmGoPage(lmPageOf(lmAbsTop(el)));
               }
-              window.addEventListener('load',function(){setTimeout(lmInit,100);});
+              window.addEventListener('load',function(){setTimeout(lmInit,50);});
             </script>""".trimIndent()
 
         // Strip any existing viewport meta from the EPUB so our injected one takes effect
@@ -304,7 +309,7 @@ class ReaderActivity : AppCompatActivity() {
         @JavascriptInterface
         fun onPageInfo(page: Int, total: Int, scrollY: Int) = runOnUiThread {
             currentPage = page
-            b.webView.scrollTo(0, scrollY)
+            b.webView.post { b.webView.scrollTo(0, scrollY) }
             savePosition()
             b.tvChapterCount.text = "Cap ${currentChapter+1}/${chapters.size}  ·  Pág ${page+1}/$total"
             b.btnPrev.isEnabled = page > 0 || currentChapter > 0
