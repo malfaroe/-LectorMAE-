@@ -171,22 +171,20 @@ class ReaderActivity : AppCompatActivity() {
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
-        // Abandono CSS columns — ningún enfoque CSS columns funcionó en WebView del Poco M3.
-        // Enfoque definitivo: translateY en body + overflow:hidden en html.
-        // body.scrollHeight = altura total del contenido (layout normal vertical).
-        // Página k: translateY(-k * _vh) mueve el body hacia arriba k páginas.
-        // html { overflow:hidden; height:_vh } recorta para mostrar solo 1 página.
-        // CSS transform funciona en TODOS los WebView sin excepciones.
+        // height:auto + overflow:visible anulan CSS del EPUB que constraen body a viewport height.
+        // Si body tiene height:100% o overflow:hidden del EPUB → scrollHeight = _vh → _t=1 → todo perdido.
         val style = """
             <style>
-              html,body{margin:0!important;padding:0!important;background:#121212!important;}
-              body{visibility:hidden!important;color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;padding:0 16px!important;box-sizing:border-box!important;}
+              html,body{margin:0!important;padding:0!important;background:#121212!important;height:auto!important;}
+              body{visibility:hidden!important;overflow:visible!important;color:#E0E0E0!important;font-size:${size}px!important;font-family:Georgia,serif!important;line-height:1.75!important;padding:0 16px!important;box-sizing:border-box!important;}
               img{max-width:100%!important;height:auto!important;}
               a{color:#C8965A!important;}
               h1,h2,h3{color:#FFFFFF!important;}
               table{max-width:100%!important;}
             </style>""".trimIndent()
 
+        // Loop de estabilización: mide scrollHeight hasta que sea estable (imágenes cargadas, scripts EPUB terminados).
+        // lmInit recibe la altura ya estable para calcular _t correctamente.
         val script = """
             <script>
             (function(){
@@ -204,9 +202,9 @@ class ReaderActivity : AppCompatActivity() {
                 var nat=el.getBoundingClientRect().top+_p*_vh;
                 lmGoPage(Math.max(0,Math.min(Math.floor(nat/_vh),_t-1)));
               }
-              function lmInit(ip,anchor){
+              function lmInit(totalH,ip,anchor){
                 _vh=Math.floor(window.innerHeight);
-                _t=Math.max(1,Math.ceil(document.body.scrollHeight/_vh));
+                _t=Math.max(1,Math.ceil(totalH/_vh));
                 document.documentElement.style.setProperty('overflow','hidden','important');
                 document.documentElement.style.setProperty('height',_vh+'px','important');
                 var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
@@ -217,7 +215,15 @@ class ReaderActivity : AppCompatActivity() {
                 lmGoPage(start);
               }
               window.lmNext=lmNext;window.lmPrev=lmPrev;window.lmGoPage=lmGoPage;window.lmGoToAnchor=lmGoToAnchor;
-              window.addEventListener('load',function(){setTimeout(function(){lmInit($initialPage,$anchorJs);},100);});
+              window.addEventListener('load',function(){
+                var lastH=0,tries=0;
+                function measure(){
+                  var h=document.body.scrollHeight;
+                  if(h>0&&(h===lastH||tries>=15)){lmInit(h,$initialPage,$anchorJs);}
+                  else{lastH=h;tries++;setTimeout(measure,100);}
+                }
+                setTimeout(measure,100);
+              });
             })();
             </script>""".trimIndent()
 
