@@ -171,9 +171,10 @@ class ReaderActivity : AppCompatActivity() {
     private fun buildHtml(original: String, size: Int, initialPage: Int, anchor: String?): String {
         val anchorJs = if (anchor != null) "'$anchor'" else "null"
 
-        // Sin overflow:hidden en html → window.scrollTo funciona (fiable en Android WebView)
-        // body width:max-content → se expande a n*_vw con CSS columns
-        // body oculto hasta que lmGoPage lo muestra (evita flash de contenido sin paginar)
+        // overflow-y:clip en body NO crea scroll container (a diferencia de overflow-y:hidden)
+        // → overflow-x del body permanece visible → html queda como scroll container
+        // → window.scrollTo(_p*_vw,0) mueve el viewport de html → muestra columna correcta
+        // → documentElement.scrollWidth = ancho total (n*_vw) porque html es el scroll container
         val style = """
             <style>
               html,body{margin:0!important;padding:0!important;background:#121212!important;}
@@ -184,9 +185,6 @@ class ReaderActivity : AppCompatActivity() {
               table{max-width:100%!important;}
             </style>""".trimIndent()
 
-        // window.scrollTo(x,0) funciona en WebView sin overflow:hidden en html.
-        // body.style.setProperty(...,'important') sobreescribe CSS del EPUB.
-        // width:max-content permite que el body se expanda al ancho total de los columns.
         val script = """
             <script>
             (function(){
@@ -212,11 +210,10 @@ class ReaderActivity : AppCompatActivity() {
                 b.style.setProperty('column-width',_vw+'px','important');
                 b.style.setProperty('column-gap','0','important');
                 b.style.setProperty('column-fill','auto','important');
-                b.style.setProperty('overflow-y','hidden','important');
-                b.style.setProperty('width','max-content','important');
+                b.style.setProperty('overflow-y','clip','important');
                 var lastW=0,tries=0;
                 function check(){
-                  var sw=document.body.scrollWidth;
+                  var sw=document.documentElement.scrollWidth;
                   if(sw>0&&(sw===lastW||tries>=20)){
                     _t=Math.max(1,Math.round(sw/_vw));
                     var start=ip<0?_t-1:Math.min(Math.max(ip,0),_t-1);
